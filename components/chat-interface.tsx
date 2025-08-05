@@ -39,12 +39,26 @@ export function ChatInterface() {
             <div className="text-center">
               <h2 className="text-2xl font-bold mb-2">Finance AI Assistant</h2>
               <p className="text-zinc-500 dark:text-zinc-400 mb-4">
-                Ask me about financial data, reports, or analysis.
+                {conversationId 
+                  ? "Ask me about financial data, reports, or analysis."
+                  : "Start a new conversation by asking about financial data, reports, or analysis."
+                }
               </p>
             </div>
           </div>
         ) : (
-          messages.map((message, index) => <ChatMessage key={index} message={message} />)
+          messages.map((message, index) => {
+            // Ensure message has the correct structure
+            const normalizedMessage = {
+              id: message.id || `msg-${index}`,
+              role: message.role || "assistant",
+              content: typeof message.content === "string" ? message.content : JSON.stringify(message.content),
+              agent: message.agent,
+              timestamp: message.timestamp,
+              isLoading: message.isLoading
+            };
+            return <ChatMessage key={normalizedMessage.id} message={normalizedMessage} />;
+          })
         )}
         <div ref={messagesEndRef} />
       </div>
@@ -54,7 +68,7 @@ export function ChatInterface() {
           <Textarea
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            placeholder="Message Finance AI..."
+            placeholder={conversationId ? "Message Finance AI..." : "Start a new conversation..."}
             className="min-h-[60px] resize-none"
             onKeyDown={(e) => {
               if (e.key === "Enter" && !e.shiftKey) {

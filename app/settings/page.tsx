@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -9,34 +9,197 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { useToast } from "@/hooks/use-toast"
 import { useConfig } from "@/hooks/use-config"
+import { CheckCircle, AlertCircle, Loader2 } from "lucide-react"
 
 export default function SettingsPage() {
   const { toast } = useToast()
   const { config, updateConfig, loading } = useConfig()
 
-  const [openaiKey, setOpenaiKey] = useState(config?.OPENAI_API_KEY || "")
-  const [googleCredentials, setGoogleCredentials] = useState(
-    JSON.stringify(config?.GOOGLE_OAUTH_CREDENTIALS_JSON || {}, null, 2),
-  )
-  const [llmModel, setLlmModel] = useState(config?.LLM_MODEL || "gpt-4")
-  const [llmTemperature, setLlmTemperature] = useState(config?.LLM_TEMPERATURE?.toString() || "0.1")
-  const [llmTimeout, setLlmTimeout] = useState(config?.LLM_TIMEOUT?.toString() || "120")
+  const [openaiKey, setOpenaiKey] = useState("")
+  const [googleCredentials, setGoogleCredentials] = useState("")
+  const [llmModel, setLlmModel] = useState("gpt-4")
+  const [llmTemperature, setLlmTemperature] = useState("0.1")
+  const [llmTimeout, setLlmTimeout] = useState("120")
 
-  const [xeroClientId, setXeroClientId] = useState(config?.xero?.client_id || "")
-  const [xeroClientSecret, setXeroClientSecret] = useState(config?.xero?.client_secret || "")
-  const [xeroRedirectUri, setXeroRedirectUri] = useState(config?.xero?.redirect_uri || "http://localhost:8080/callback")
+  const [xeroClientId, setXeroClientId] = useState("")
+  const [xeroClientSecret, setXeroClientSecret] = useState("")
+  const [xeroRedirectUri, setXeroRedirectUri] = useState("http://localhost:8080/callback")
+
+  // Track Flask backend status
+  const [flaskConfigSent, setFlaskConfigSent] = useState(false)
+  const [sendingToFlask, setSendingToFlask] = useState(false)
+  const [initialLoading, setInitialLoading] = useState(true)
+
+  // Update state when config loads
+  useEffect(() => {
+    if (config) {
+      setOpenaiKey(config.OPENAI_API_KEY || "")
+      setGoogleCredentials(JSON.stringify(config.GOOGLE_OAUTH_CREDENTIALS_JSON || {}, null, 2))
+      setLlmModel(config.LLM_MODEL || "gpt-4")
+      setLlmTemperature(config.LLM_TEMPERATURE?.toString() || "0.1")
+      setLlmTimeout(config.LLM_TIMEOUT?.toString() || "120")
+      setXeroClientId(config.xero?.client_id || "")
+      setXeroClientSecret(config.xero?.client_secret || "")
+      setXeroRedirectUri(config.xero?.redirect_uri || "http://localhost:8080/callback")
+      setInitialLoading(false)
+    }
+  }, [config])
+
+  // Check Flask backend status on component mount
+  useEffect(() => {
+    // Load Flask status from localStorage first (for immediate UI feedback)
+    const savedFlaskStatus = localStorage.getItem('flask_config_status')
+    if (savedFlaskStatus) {
+      setFlaskConfigSent(JSON.parse(savedFlaskStatus))
+    }
+    
+    // Then check actual Flask status
+    checkFlaskBackendStatus()
+  }, [])
+
+  // Function to check if Flask backend is configured
+  const checkFlaskBackendStatus = async () => {
+    try {
+      const response = await fetch('/api/config/llm') // This now calls /api/config/status on Flask
+      if (response.ok) {
+        const data = await response.json()
+        // Check if both required configs are set (OpenAI and Google)
+        const isConfigured = data.openai_configured && data.google_configured
+        setFlaskConfigSent(isConfigured)
+        
+        // Save status to localStorage for persistence
+        localStorage.setItem('flask_config_status', JSON.stringify(isConfigured))
+      } else {
+        setFlaskConfigSent(false)
+        localStorage.setItem('flask_config_status', JSON.stringify(false))
+      }
+    } catch (error) {
+      console.log('Flask backend not available:', error)
+      setFlaskConfigSent(false)
+      localStorage.setItem('flask_config_status', JSON.stringify(false))
+    }
+  }
+
+  // Function to send OpenAI config to Flask backend
+  const sendOpenAIConfigToFlask = async (configData: any) => {
+    try {
+      setSendingToFlask(true)
+      const response = await fetch('/api/config/llm', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          openaiKey: configData.OPENAI_API_KEY,
+          llmModel: configData.LLM_MODEL,
+          llmTemperature: configData.LLM_TEMPERATURE,
+          llmTimeout: configData.LLM_TIMEOUT,
+        }),
+      })
+
+      if (!response.ok) {
+        throw new Error(`Failed to send OpenAI config to Flask backend: ${response.statusText}`)
+      }
+
+      const result = await response.json()
+      console.log('Flask OpenAI config updated:', result)
+      
+      // Check overall Flask status after successful config
+      await checkFlaskBackendStatus()
+    } catch (error) {
+      console.error('Error sending OpenAI config to Flask:', error)
+      setFlaskConfigSent(false)
+      throw error
+    } finally {
+      setSendingToFlask(false)
+    }
+  }
+
+  // Function to send Google config to Flask backend
+  const sendGoogleConfigToFlask = async () => {
+    try {
+      setSendingToFlask(true)
+      const parsedCredentials = JSON.parse(googleCredentials || '{}')
+      
+      const response = await fetch('/api/config/google', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          googleCredentials: parsedCredentials,
+        }),
+      })
+
+      if (!response.ok) {
+        throw new Error(`Failed to send Google config to Flask backend: ${response.statusText}`)
+      }
+
+      const result = await response.json()
+      console.log('Flask Google config updated:', result)
+      
+      // Check overall Flask status after successful config
+      await checkFlaskBackendStatus()
+    } catch (error) {
+      console.error('Error sending Google config to Flask:', error)
+      setFlaskConfigSent(false)
+      throw error
+    } finally {
+      setSendingToFlask(false)
+    }
+  }
+
+  // Function to send Xero config to Flask backend
+  const sendXeroConfigToFlask = async (xeroData: any) => {
+    try {
+      setSendingToFlask(true)
+      const response = await fetch('/api/config/xero', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          clientId: xeroData.client_id,
+          clientSecret: xeroData.client_secret,
+          redirectUri: xeroData.redirect_uri,
+        }),
+      })
+
+      if (!response.ok) {
+        throw new Error(`Failed to send Xero config to Flask backend: ${response.statusText}`)
+      }
+
+      const result = await response.json()
+      console.log('Flask Xero config updated:', result)
+    } catch (error) {
+      console.error('Error sending Xero config to Flask:', error)
+      throw error
+    } finally {
+      setSendingToFlask(false)
+    }
+  }
 
   const handleSaveOpenAI = async () => {
     try {
+      // Save to local config
       await updateConfig({
         OPENAI_API_KEY: openaiKey,
         LLM_MODEL: llmModel,
         LLM_TEMPERATURE: Number.parseFloat(llmTemperature),
         LLM_TIMEOUT: Number.parseInt(llmTimeout),
       })
+
+      // Send OpenAI config to Flask backend
+      await sendOpenAIConfigToFlask({
+        OPENAI_API_KEY: openaiKey,
+        LLM_MODEL: llmModel,
+        LLM_TEMPERATURE: Number.parseFloat(llmTemperature),
+        LLM_TIMEOUT: Number.parseInt(llmTimeout),
+      })
+
       toast({
         title: "Settings saved",
-        description: "Your OpenAI settings have been updated.",
+        description: "Your OpenAI settings have been updated and sent to the AI backend.",
       })
     } catch (error) {
       toast({
@@ -61,13 +224,17 @@ export default function SettingsPage() {
         return
       }
 
+      // Save to local config
       await updateConfig({
         GOOGLE_OAUTH_CREDENTIALS_JSON: parsedCredentials,
       })
 
+      // Send Google config to Flask backend
+      await sendGoogleConfigToFlask()
+
       toast({
         title: "Settings saved",
-        description: "Your Google credentials have been updated.",
+        description: "Your Google credentials have been updated and sent to the AI backend.",
       })
     } catch (error) {
       toast({
@@ -80,17 +247,23 @@ export default function SettingsPage() {
 
   const handleSaveXero = async () => {
     try {
+      const xeroConfig = {
+        client_id: xeroClientId,
+        client_secret: xeroClientSecret,
+        redirect_uri: xeroRedirectUri,
+      }
+
+      // Save to local config
       await updateConfig({
-        xero: {
-          client_id: xeroClientId,
-          client_secret: xeroClientSecret,
-          redirect_uri: xeroRedirectUri,
-        },
+        xero: xeroConfig,
       })
+
+      // Send Xero config to Flask backend
+      await sendXeroConfigToFlask(xeroConfig)
 
       toast({
         title: "Settings saved",
-        description: "Your Xero settings have been updated.",
+        description: "Your Xero settings have been updated and sent to the AI backend.",
       })
     } catch (error) {
       toast({
@@ -102,15 +275,74 @@ export default function SettingsPage() {
   }
 
   return (
-    <div className="container py-10 bg-gradient-to-br from-teal-50 to-emerald-50 dark:from-zinc-900 dark:to-emerald-950 min-h-screen">
+    <div className="w-full px-4 sm:px-6 lg:px-8 py-10 bg-gradient-to-br from-teal-50 to-emerald-50 dark:from-zinc-900 dark:to-emerald-950 min-h-screen">
       <h1 className="text-3xl font-bold mb-6">Settings</h1>
 
-      <Tabs defaultValue="openai">
+      {initialLoading && (
+        <div className="flex items-center justify-center p-8">
+          <Loader2 className="h-8 w-8 animate-spin mr-2" />
+          <span>Loading saved settings...</span>
+        </div>
+      )}
+
+      {!initialLoading && (
+      <Tabs defaultValue="google">
         <TabsList className="mb-6">
-          <TabsTrigger value="openai">OpenAI</TabsTrigger>
           <TabsTrigger value="google">Google</TabsTrigger>
+          <TabsTrigger value="openai">OpenAI</TabsTrigger>
           <TabsTrigger value="xero">Xero</TabsTrigger>
         </TabsList>
+
+        <TabsContent value="google">
+          <Card>
+            <CardHeader>
+              <CardTitle>Google OAuth Configuration</CardTitle>
+              <CardDescription>Configure your Google OAuth credentials for API access.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-2">
+                <Label htmlFor="google-credentials">OAuth Credentials JSON</Label>
+                <Textarea
+                  id="google-credentials"
+                  value={googleCredentials}
+                  onChange={(e) => setGoogleCredentials(e.target.value)}
+                  placeholder='{"installed": {"client_id": "..."}}'
+                  className="font-mono h-64"
+                />
+              </div>
+            </CardContent>
+            <CardFooter className="flex items-center justify-between">
+              <Button
+                onClick={handleSaveGoogle}
+                disabled={loading || sendingToFlask}
+                className="bg-emerald-600 hover:bg-emerald-700 text-white"
+              >
+                {sendingToFlask && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                Save Google Settings
+              </Button>
+              
+              {/* Flask Backend Status */}
+              <div className="flex items-center gap-2 text-sm">
+                {sendingToFlask ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin text-yellow-500" />
+                    <span className="text-yellow-600">Sending to AI Backend...</span>
+                  </>
+                ) : flaskConfigSent ? (
+                  <>
+                    <CheckCircle className="h-4 w-4 text-green-500" />
+                    <span className="text-green-600">AI Backend Configured</span>
+                  </>
+                ) : (
+                  <>
+                    <AlertCircle className="h-4 w-4 text-amber-500" />
+                    <span className="text-amber-600">AI Backend Not Configured</span>
+                  </>
+                )}
+              </div>
+            </CardFooter>
+          </Card>
+        </TabsContent>
 
         <TabsContent value="openai">
           <Card>
@@ -127,6 +359,7 @@ export default function SettingsPage() {
                   value={openaiKey}
                   onChange={(e) => setOpenaiKey(e.target.value)}
                   placeholder="sk-..."
+                  disabled={loading || sendingToFlask}
                 />
               </div>
 
@@ -166,44 +399,35 @@ export default function SettingsPage() {
                 </div>
               </div>
             </CardContent>
-            <CardFooter>
+            <CardFooter className="flex items-center justify-between">
               <Button
                 onClick={handleSaveOpenAI}
-                disabled={loading}
+                disabled={loading || sendingToFlask}
                 className="bg-emerald-600 hover:bg-emerald-700 text-white"
               >
+                {sendingToFlask && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                 Save OpenAI Settings
               </Button>
-            </CardFooter>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="google">
-          <Card>
-            <CardHeader>
-              <CardTitle>Google OAuth Configuration</CardTitle>
-              <CardDescription>Configure your Google OAuth credentials for API access.</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-2">
-                <Label htmlFor="google-credentials">OAuth Credentials JSON</Label>
-                <Textarea
-                  id="google-credentials"
-                  value={googleCredentials}
-                  onChange={(e) => setGoogleCredentials(e.target.value)}
-                  placeholder='{"installed": {"client_id": "..."}}'
-                  className="font-mono h-64"
-                />
+              
+              {/* Flask Backend Status */}
+              <div className="flex items-center gap-2 text-sm">
+                {sendingToFlask ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin text-yellow-500" />
+                    <span className="text-yellow-600">Sending to AI Backend...</span>
+                  </>
+                ) : flaskConfigSent ? (
+                  <>
+                    <CheckCircle className="h-4 w-4 text-green-500" />
+                    <span className="text-green-600">AI Backend Configured</span>
+                  </>
+                ) : (
+                  <>
+                    <AlertCircle className="h-4 w-4 text-amber-500" />
+                    <span className="text-amber-600">AI Backend Not Configured</span>
+                  </>
+                )}
               </div>
-            </CardContent>
-            <CardFooter>
-              <Button
-                onClick={handleSaveGoogle}
-                disabled={loading}
-                className="bg-emerald-600 hover:bg-emerald-700 text-white"
-              >
-                Save Google Settings
-              </Button>
             </CardFooter>
           </Card>
         </TabsContent>
@@ -251,6 +475,7 @@ export default function SettingsPage() {
           </Card>
         </TabsContent>
       </Tabs>
+      )}
     </div>
   )
 }

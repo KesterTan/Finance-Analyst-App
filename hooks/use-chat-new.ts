@@ -103,14 +103,10 @@ export function useChat(conversationId?: string) {
   const sendMessage = async (content: string) => {
     if (!content.trim()) return
 
-    // Declare message IDs in the function scope so they're available in catch block
-    let userMessageId = ''
-    let loadingMessageId = ''
-
     try {
       setLoading(true)
 
-      // If no conversation ID, create a new conversation first
+      // If no conversation ID, create a new conversation first and redirect
       if (!conversationId) {
         console.log("No conversation ID, creating new conversation...")
         const createResponse = await fetch("/api/conversations", {
@@ -130,7 +126,6 @@ export function useChat(conversationId?: string) {
               router.push("/settings")
               return
             } else {
-              // Configuration exists locally but backend isn't synced
               toast({
                 title: "Backend Configuration Issue",
                 description: "Your settings may not be synced with the backend. Please check Settings page.",
@@ -145,26 +140,32 @@ export function useChat(conversationId?: string) {
         
         const createData = await createResponse.json()
         if (createData.conversation_id) {
-          // Don't redirect with message - just redirect to the conversation
-          // The message will be sent in the current flow
+          // Store the message in localStorage temporarily and redirect
+          localStorage.setItem('pending_message', content)
           router.push(`/chat/${createData.conversation_id}`)
-          // Wait for the redirect to complete, then return to stop this execution
           return
         }
       }
 
-      // Add user message immediately (no optimistic AI response)
-      userMessageId = `user-${Date.now()}-${Math.random()}`
-      loadingMessageId = `loading-${Date.now()}-${Math.random()}`
+      // Check if there's a pending message from localStorage (from conversation creation)
+      const pendingMsg = localStorage.getItem('pending_message')
+      let messageToSend = content
+      if (pendingMsg && conversationId) {
+        localStorage.removeItem('pending_message')
+        messageToSend = pendingMsg
+      }
+
+      // Send message to existing conversation
+      const userMessageId = `user-${Date.now()}-${Math.random()}`
+      const loadingMessageId = `loading-${Date.now()}-${Math.random()}`
       
       const userMessage: Message = {
         id: userMessageId,
         role: "user",
-        content,
+        content: messageToSend,
         timestamp: Date.now() / 1000,
       }
 
-      // Add loading message for AI response
       const loadingMessage: Message = {
         id: loadingMessageId,
         role: "assistant",
@@ -180,7 +181,7 @@ export function useChat(conversationId?: string) {
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ message: content }),
+        body: JSON.stringify({ message: messageToSend }),
       })
 
       if (!response.ok) {
@@ -189,7 +190,7 @@ export function useChat(conversationId?: string) {
         // Remove loading message on error
         setMessages((prev) => prev.filter(msg => msg.id !== loadingMessageId))
         
-        // Handle configuration errors - but only redirect if not configured locally
+        // Handle configuration errors
         if (response.status === 424 || errorData.flask_error?.includes('llm_config')) {
           if (!isConfiguredLocally()) {
             toast({
@@ -197,12 +198,10 @@ export function useChat(conversationId?: string) {
               description: errorData.suggestion || "Please configure OpenAI and Google settings first",
               variant: "destructive",
             })
-            // Remove user message too
             setMessages((prev) => prev.filter(msg => msg.id !== userMessageId))
             router.push("/settings")
             return
           } else {
-            // Configuration exists locally but backend isn't synced
             toast({
               title: "Backend Configuration Issue",
               description: "Your settings may not be synced with the backend. Please check Settings page.",
@@ -212,61 +211,33 @@ export function useChat(conversationId?: string) {
           }
         }
         
-        // Handle conversation not found - create new conversation
+        // Handle 404 - conversation not found, try creating new one
         if (response.status === 404) {
           console.log("Conversation not found, creating new conversation...")
-          // Remove both messages first
           setMessages((prev) => prev.filter(msg => msg.id !== userMessageId && msg.id !== loadingMessageId))
           
-          try {
-            const createResponse = await fetch("/api/conversations", {
-              method: "POST",
-            })
-            
-            if (!createResponse.ok) {
-              const createErrorData = await createResponse.json()
-              
-              if (createResponse.status === 424 || createErrorData.flask_error?.includes('llm_config')) {
-                if (!isConfiguredLocally()) {
-                  toast({
-                    title: "Configuration Required",
-                    description: createErrorData.suggestion || "Please configure OpenAI and Google settings first",
-                    variant: "destructive",
-                  })
-                  router.push("/settings")
-                  return
-                } else {
-                  // Configuration exists locally but backend isn't synced
-                  toast({
-                    title: "Backend Configuration Issue",
-                    description: "Your settings may not be synced with the backend. Please check Settings page.",
-                    variant: "destructive",
-                  })
-                  return
-                }
-              }
-              
-              throw new Error(createErrorData.details || "Failed to create conversation")
-            }
-            
+          const createResponse = await fetch("/api/conversations", {
+            method: "POST",
+          })
+          
+          if (createResponse.ok) {
             const createData = await createResponse.json()
             if (createData.conversation_id) {
-              // Don't redirect with message - just redirect to the conversation
-              // The message will be sent in the current flow
+              localStorage.setItem('pending_message', messageToSend)
               router.push(`/chat/${createData.conversation_id}`)
               return
             }
-          } catch (createError) {
-            toast({
-              title: "Error",
-              description: "Failed to create new conversation",
-              variant: "destructive",
-            })
-            return
           }
+          
+          toast({
+            title: "Error",
+            description: "Conversation not found and couldn't create a new one.",
+            variant: "destructive",
+          })
+          return
         }
         
-        // Handle Flask internal server errors (like JSON serialization issues)
+        // Handle 500 errors with graceful error message in chat
         if (response.status === 500) {
           const errorMessage: Message = {
             id: `error-${Date.now()}-${Math.random()}`,
@@ -277,11 +248,9 @@ export function useChat(conversationId?: string) {
             timestamp: Date.now() / 1000,
           }
           
-          // Replace loading message with error message
           setMessages((prev) => prev.map(msg => 
             msg.id === loadingMessageId ? errorMessage : msg
           ))
-          
           return
         }
         
@@ -302,12 +271,10 @@ export function useChat(conversationId?: string) {
           timestamp: data.response.timestamp || Date.now() / 1000,
         }
         
-        // Replace loading message with actual response
         setMessages((prev) => prev.map(msg => 
           msg.id === loadingMessageId ? assistantMessage : msg
         ))
       } else {
-        // If no response, remove loading message
         setMessages((prev) => prev.filter(msg => msg.id !== loadingMessageId))
       }
 
@@ -319,19 +286,33 @@ export function useChat(conversationId?: string) {
         description: error instanceof Error ? error.message : "Failed to send message",
         variant: "destructive",
       })
-
-      // Remove any messages that were added during this attempt
+      
+      // Clean up any messages added during this attempt
       setMessages((prev) => prev.filter(msg => 
-        msg.id !== userMessageId && msg.id !== loadingMessageId
+        !msg.id?.startsWith('user-') && !msg.id?.startsWith('loading-')
       ))
     } finally {
       setLoading(false)
     }
   }
 
+  // Check for pending messages when conversation loads
   useEffect(() => {
     if (conversationId) {
       fetchMessages()
+      
+      // If there's a pending message, send it after messages are loaded
+      const pendingMsg = localStorage.getItem('pending_message')
+      if (pendingMsg) {
+        // Small delay to ensure messages are loaded first
+        setTimeout(() => {
+          const messageToSend = localStorage.getItem('pending_message')
+          if (messageToSend) {
+            localStorage.removeItem('pending_message')
+            sendMessage(messageToSend)
+          }
+        }, 500)
+      }
     } else {
       setMessages([])
     }

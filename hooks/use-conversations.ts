@@ -10,6 +10,19 @@ interface Conversation {
   message_count: number
 }
 
+// Helper function to check if configuration is present locally
+function isConfiguredLocally(): boolean {
+  try {
+    const storedConfig = localStorage.getItem("app_config")
+    if (!storedConfig) return false
+    
+    const config = JSON.parse(storedConfig)
+    return !!(config.OPENAI_API_KEY && config.GOOGLE_OAUTH_CREDENTIALS_JSON)
+  } catch {
+    return false
+  }
+}
+
 export function useConversations() {
   const [conversations, setConversations] = useState<Conversation[]>([])
   const [loading, setLoading] = useState(false)
@@ -36,9 +49,88 @@ export function useConversations() {
   const createConversation = async () => {
     try {
       setLoading(true)
+      
+      // First, check if backend is configured by checking health/capabilities
+      try {
+        const healthResponse = await fetch("/api/health")
+        if (!healthResponse.ok) {
+          toast({
+            title: "Backend Unavailable",
+            description: "Cannot connect to the Flask backend. Make sure it's running.",
+            variant: "destructive",
+          })
+          return
+        }
+        
+        const capabilitiesResponse = await fetch("/api/capabilities")
+        if (!capabilitiesResponse.ok) {
+          if (capabilitiesResponse.status === 424) {
+            const errorData = await capabilitiesResponse.json()
+            if (!isConfiguredLocally()) {
+              toast({
+                title: "Configuration Required",
+                description: errorData.suggestion || "Please configure OpenAI and Google settings first",
+                variant: "destructive",
+              })
+              router.push("/settings")
+              return
+            } else {
+              // Configuration exists locally but backend isn't synced
+              toast({
+                title: "Backend Configuration Issue",
+                description: "Your settings may not be synced with the backend. Please check Settings page.",
+                variant: "destructive",
+              })
+              return
+            }
+          }
+        }
+      } catch (healthError) {
+        toast({
+          title: "Backend Unavailable",
+          description: "Cannot connect to the Flask backend. Make sure it's running.",
+          variant: "destructive",
+        })
+        return
+      }
+      
       const response = await fetch("/api/conversations", {
         method: "POST",
       })
+      
+      if (!response.ok) {
+        const errorData = await response.json()
+        
+        // Handle configuration errors - but only redirect if not configured locally
+        if (response.status === 424 || errorData.flask_error?.includes('llm_config')) {
+          if (!isConfiguredLocally()) {
+            toast({
+              title: "Configuration Required",
+              description: errorData.suggestion || "Please configure OpenAI and Google settings first",
+              variant: "destructive",
+            })
+            router.push("/settings")
+            return
+          } else {
+            // Configuration exists locally but backend isn't synced
+            toast({
+              title: "Backend Configuration Issue",
+              description: "Your settings may not be synced with the backend. Please check Settings page.",
+              variant: "destructive",
+            })
+            return
+          }
+        }
+        
+        // Handle other errors
+        toast({
+          title: "Error",
+          description: errorData.details || "Failed to create conversation",
+          variant: "destructive",
+        })
+        return
+      }
+      
       const data = await response.json()
 
       if (data.conversation_id) {
@@ -46,9 +138,10 @@ export function useConversations() {
         await fetchConversations()
       }
     } catch (error) {
+      console.error("Create conversation error:", error)
       toast({
-        title: "Error",
-        description: "Failed to create a new conversation",
+        title: "Connection Error",
+        description: "Cannot connect to the backend. Make sure the Flask server is running.",
         variant: "destructive",
       })
     } finally {

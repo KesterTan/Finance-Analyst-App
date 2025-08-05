@@ -1,11 +1,15 @@
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { cn } from "@/lib/utils"
+import { Loader2 } from "lucide-react"
 
 interface Message {
   role: "user" | "assistant"
-  content: string
+  content: string | any
   agent?: string
   timestamp?: number
+  name?: string
+  isLoading?: boolean
+  id?: string
 }
 
 interface ChatMessageProps {
@@ -14,6 +18,11 @@ interface ChatMessageProps {
 
 export function ChatMessage({ message }: ChatMessageProps) {
   const isUser = message.role === "user"
+  
+  // Ensure content is always a string
+  const content = typeof message.content === "string" 
+    ? message.content 
+    : JSON.stringify(message.content)
 
   return (
     <div className={cn("flex gap-3", isUser ? "justify-end" : "justify-start")}>
@@ -31,8 +40,17 @@ export function ChatMessage({ message }: ChatMessageProps) {
             : "bg-white dark:bg-zinc-800 text-zinc-800 dark:text-zinc-100 border border-emerald-100 dark:border-emerald-900/30",
         )}
       >
-        <div className="whitespace-pre-wrap">{message.content}</div>
-        {message.agent && <div className="text-xs mt-2 opacity-70">Agent: {message.agent}</div>}
+        {message.isLoading ? (
+          <div className="flex items-center gap-2">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            <span className="text-sm opacity-70">AI is thinking...</span>
+          </div>
+        ) : (
+          <div className="whitespace-pre-wrap">{content}</div>
+        )}
+        {message.agent && !message.isLoading && (
+          <div className="text-xs mt-2 opacity-70">Agent: {message.agent}</div>
+        )}
       </div>
 
       {isUser && (
