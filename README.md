@@ -60,8 +60,9 @@ This frontend requires the Flask backend to be running. Make sure you have the F
 Navigate to your Flask backend directory and run:
 
 ```bash
-python app.py
+python launcher.py
 ```
+Select option 2
 
 Make sure the Flask server is running on the port specified in your `FLASK_API_URL` environment variable (default: `http://localhost:5000`).
 
