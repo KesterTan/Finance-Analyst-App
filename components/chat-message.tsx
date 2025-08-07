@@ -1,6 +1,7 @@
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { cn } from "@/lib/utils"
 import { Loader2 } from "lucide-react"
+import { renderContentWithLinks } from "@/lib/link-utils"
 
 interface Message {
   role: "user" | "assistant"
@@ -14,15 +15,22 @@ interface Message {
 
 interface ChatMessageProps {
   message: Message
+  onLinkClick?: (url: string) => void
 }
 
-export function ChatMessage({ message }: ChatMessageProps) {
+export function ChatMessage({ message, onLinkClick }: ChatMessageProps) {
   const isUser = message.role === "user"
   
   // Ensure content is always a string
   const content = typeof message.content === "string" 
     ? message.content 
     : JSON.stringify(message.content)
+
+  const handleLinkClick = (url: string) => {
+    if (onLinkClick) {
+      onLinkClick(url)
+    }
+  }
 
   return (
     <div className={cn("flex gap-3", isUser ? "justify-end" : "justify-start")}>
@@ -46,7 +54,9 @@ export function ChatMessage({ message }: ChatMessageProps) {
             <span className="text-sm opacity-70">AI is thinking...</span>
           </div>
         ) : (
-          <div className="whitespace-pre-wrap">{content}</div>
+          <div className="whitespace-pre-wrap">
+            {renderContentWithLinks(content, handleLinkClick)}
+          </div>
         )}
         {message.agent && !message.isLoading && (
           <div className="text-xs mt-2 opacity-70">Agent: {message.agent}</div>
