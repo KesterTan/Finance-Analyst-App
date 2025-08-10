@@ -119,65 +119,18 @@ export function useChat(conversationId?: string) {
   const sendMessage = async (content: string) => {
     if (!content.trim()) return
 
+    // Only send message if we have a conversation ID
+    if (!conversationId) {
+      console.warn("Cannot send message: no conversation ID")
+      return
+    }
+
     // Declare message IDs in the function scope so they're available in catch block
     let userMessageId = ''
     let loadingMessageId = ''
 
     try {
       setLoading(true)
-
-      // If no conversation ID, create a new conversation first
-      if (!conversationId) {
-        console.log("No conversation ID, creating new conversation...")
-        const createResponse = await fetch("/api/conversations", {
-          method: "POST",
-        })
-        
-        if (!createResponse.ok) {
-          const errorData = await createResponse.json()
-          
-          // Check for server connectivity issues first
-          if (createResponse.status >= 500 && createResponse.status < 600) {
-            toast({
-              title: "Server Connection Error",
-              description: "Unable to connect to the backend server. Please check if the server is running.",
-              variant: "destructive",
-            })
-            return
-          }
-          
-          if (createResponse.status === 424 || errorData.flask_error?.includes('llm_config')) {
-            if (!isConfiguredLocally()) {
-              toast({
-                title: "Configuration Required",
-                description: errorData.suggestion || "Please configure OpenAI and Google settings first",
-                variant: "destructive",
-              })
-              router.push("/settings")
-              return
-            } else {
-              // Configuration exists locally but backend isn't synced
-              toast({
-                title: "Backend Configuration Issue",
-                description: "Your settings may not be synced with the backend. Please check Settings page.",
-                variant: "destructive",
-              })
-              return
-            }
-          }
-          
-          throw new Error(errorData.details || "Failed to create conversation")
-        }
-        
-        const createData = await createResponse.json()
-        if (createData.conversation_id) {
-          // Don't redirect with message - just redirect to the conversation
-          // The message will be sent in the current flow
-          router.push(`/chat/${createData.conversation_id}`)
-          // Wait for the redirect to complete, then return to stop this execution
-          return
-        }
-      }
 
       // Add user message immediately (no optimistic AI response)
       userMessageId = `user-${Date.now()}-${Math.random()}`
