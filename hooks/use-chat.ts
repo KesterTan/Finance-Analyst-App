@@ -90,11 +90,27 @@ export function useChat(conversationId?: string) {
       setMessages(normalizedMessages)
     } catch (error) {
       console.error("Fetch messages error:", error)
-      toast({
-        title: "Error",
-        description: error instanceof Error ? error.message : "Failed to load conversation messages",
-        variant: "destructive",
-      })
+      
+      // Check for network connectivity errors
+      if (error instanceof TypeError && error.message.includes('Failed to fetch')) {
+        toast({
+          title: "Server Connection Error",
+          description: "Unable to connect to the backend server. Please check if the server is running.",
+          variant: "destructive",
+        })
+      } else if (error instanceof Error && error.name === 'AbortError') {
+        toast({
+          title: "Server Timeout",
+          description: "The server is taking too long to respond. Please check your connection.",
+          variant: "destructive",
+        })
+      } else {
+        toast({
+          title: "Error",
+          description: error instanceof Error ? error.message : "Failed to load conversation messages",
+          variant: "destructive",
+        })
+      }
     } finally {
       setLoading(false)
     }
@@ -119,6 +135,16 @@ export function useChat(conversationId?: string) {
         
         if (!createResponse.ok) {
           const errorData = await createResponse.json()
+          
+          // Check for server connectivity issues first
+          if (createResponse.status >= 500 && createResponse.status < 600) {
+            toast({
+              title: "Server Connection Error",
+              description: "Unable to connect to the backend server. Please check if the server is running.",
+              variant: "destructive",
+            })
+            return
+          }
           
           if (createResponse.status === 424 || errorData.flask_error?.includes('llm_config')) {
             if (!isConfiguredLocally()) {
@@ -189,6 +215,18 @@ export function useChat(conversationId?: string) {
         // Remove loading message on error
         setMessages((prev) => prev.filter(msg => msg.id !== loadingMessageId))
         
+        // Check for server connectivity issues first
+        if (response.status >= 500 && response.status < 600) {
+          toast({
+            title: "Server Connection Error",
+            description: "Unable to connect to the backend server. Please check if the server is running.",
+            variant: "destructive",
+          })
+          // Remove user message too
+          setMessages((prev) => prev.filter(msg => msg.id !== userMessageId))
+          return
+        }
+        
         // Handle configuration errors - but only redirect if not configured locally
         if (response.status === 424 || errorData.flask_error?.includes('llm_config')) {
           if (!isConfiguredLocally()) {
@@ -225,6 +263,16 @@ export function useChat(conversationId?: string) {
             
             if (!createResponse.ok) {
               const createErrorData = await createResponse.json()
+              
+              // Check for server connectivity issues first
+              if (createResponse.status >= 500 && createResponse.status < 600) {
+                toast({
+                  title: "Server Connection Error",
+                  description: "Unable to connect to the backend server. Please check if the server is running.",
+                  variant: "destructive",
+                })
+                return
+              }
               
               if (createResponse.status === 424 || createErrorData.flask_error?.includes('llm_config')) {
                 if (!isConfiguredLocally()) {
@@ -314,11 +362,27 @@ export function useChat(conversationId?: string) {
       return data
     } catch (error) {
       console.error("Send message error:", error)
-      toast({
-        title: "Error",
-        description: error instanceof Error ? error.message : "Failed to send message",
-        variant: "destructive",
-      })
+      
+      // Check for network connectivity errors
+      if (error instanceof TypeError && error.message.includes('Failed to fetch')) {
+        toast({
+          title: "Server Connection Error",
+          description: "Unable to connect to the backend server. Please check if the server is running.",
+          variant: "destructive",
+        })
+      } else if (error instanceof Error && error.name === 'AbortError') {
+        toast({
+          title: "Server Timeout",
+          description: "The server is taking too long to respond. Please check your connection.",
+          variant: "destructive",
+        })
+      } else {
+        toast({
+          title: "Error",
+          description: error instanceof Error ? error.message : "Failed to send message",
+          variant: "destructive",
+        })
+      }
 
       // Remove any messages that were added during this attempt
       setMessages((prev) => prev.filter(msg => 

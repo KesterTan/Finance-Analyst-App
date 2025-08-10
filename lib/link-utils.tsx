@@ -97,9 +97,6 @@ export function getEmbeddableUrl(url: string): string {
 export function renderContentWithLinks(content: string, onLinkClick: (url: string) => void) {
   const urls = extractUrls(content);
   
-  console.log(`Content: "${content}"`);
-  console.log(`Extracted URLs:`, urls);
-  
   if (urls.length === 0) {
     return content;
   }
@@ -114,7 +111,6 @@ export function renderContentWithLinks(content: string, onLinkClick: (url: strin
           onClick={(e) => {
             e.preventDefault();
             e.stopPropagation();
-            console.log(`Button clicked for URL: ${part}`);
             onLinkClick(part);
           }}
           className="text-blue-500 hover:text-blue-700 underline break-all cursor-pointer"

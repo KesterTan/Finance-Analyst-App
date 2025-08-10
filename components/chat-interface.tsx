@@ -9,12 +9,16 @@ import { Textarea } from "@/components/ui/textarea"
 import { Send, Loader2, X, ExternalLink, Maximize2, Minimize2, Menu } from "lucide-react"
 import { ChatMessage } from "@/components/chat-message"
 import { useChat } from "@/hooks/use-chat"
+import { useToast } from "@/hooks/use-toast"
+import { useConversations } from "@/hooks/use-conversations"
 import { extractUrls, isEmbeddableUrl, getEmbeddableUrl } from "@/lib/link-utils"
 import { cn } from "@/lib/utils"
 
 export function ChatInterface() {
   const { conversationId } = useParams()
   const router = useRouter()
+  const { toast } = useToast()
+  const { createConversation } = useConversations()
   const [input, setInput] = useState("")
   const messagesEndRef = useRef<HTMLDivElement>(null)
   
@@ -23,15 +27,45 @@ export function ChatInterface() {
   const [iframeError, setIframeError] = useState(false)
   const [isFullscreen, setIsFullscreen] = useState(false)
   const [chatMinimized, setChatMinimized] = useState(false)
+  
+  // Local loading state for conversation creation
+  const [creatingConversation, setCreatingConversation] = useState(false)
 
   const { messages, sendMessage, loading } = useChat(conversationId as string)
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!input.trim() || loading) return
+    if (!input.trim() || loading || creatingConversation) return
 
     const userMessage = input
     setInput("")
+
+    // If no conversation exists, create one first
+    if (!conversationId) {
+      try {
+        setCreatingConversation(true)
+        
+        const newConversationId = await createConversation()
+        if (newConversationId) {
+          // Navigate to the new conversation and the sendMessage will handle it
+          router.push(`/chat/${newConversationId}`)
+          // Store the message to send after navigation
+          sessionStorage.setItem('pendingMessage', userMessage)
+          return
+        }
+      } catch (error) {
+        console.error('Failed to create conversation:', error)
+        toast({
+          title: "Error",
+          description: "Failed to create new conversation. Please try again.",
+          variant: "destructive",
+        })
+        return
+      } finally {
+        setCreatingConversation(false)
+      }
+    }
+
     await sendMessage(userMessage)
   }
 
@@ -79,6 +113,23 @@ export function ChatInterface() {
     console.log(`activeUrl changed to: ${activeUrl}`)
   }, [activeUrl])
 
+  // Handle pending message after navigation
+  useEffect(() => {
+    if (conversationId) {
+      const pendingMessage = sessionStorage.getItem('pendingMessage')
+      if (pendingMessage) {
+        sessionStorage.removeItem('pendingMessage')
+        // Clear the creating conversation state since we've navigated
+        setCreatingConversation(false)
+        setInput(pendingMessage)
+        // Auto-send the pending message
+        setTimeout(() => {
+          sendMessage(pendingMessage)
+        }, 100)
+      }
+    }
+  }, [conversationId, sendMessage])
+
   return (
     <div className="flex h-full">
       {/* Chat Panel */}
@@ -125,7 +176,7 @@ export function ChatInterface() {
           "flex-1 overflow-y-auto transition-all duration-300",
           chatMinimized ? "hidden" : "block p-4 space-y-6"
         )}>
-          {messages.length === 0 ? (
+          {messages.length === 0 && !creatingConversation ? (
             <div className="flex items-center justify-center h-full">
               <div className="text-center">
                 <h2 className="text-2xl font-bold mb-2">Finance AI Assistant</h2>
@@ -134,6 +185,16 @@ export function ChatInterface() {
                     ? "Ask me about financial data, reports, or analysis."
                     : "Start a new conversation by asking about financial data, reports, or analysis."
                   }
+                </p>
+              </div>
+            </div>
+          ) : creatingConversation ? (
+            <div className="flex items-center justify-center h-full">
+              <div className="text-center">
+                <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4 text-emerald-600" />
+                <h3 className="text-lg font-medium mb-2">Creating new conversation...</h3>
+                <p className="text-zinc-500 dark:text-zinc-400">
+                  Please wait while we set up your chat.
                 </p>
               </div>
             </div>
@@ -169,8 +230,15 @@ export function ChatInterface() {
             <Textarea
               value={input}
               onChange={(e) => setInput(e.target.value)}
-              placeholder={conversationId ? "Message Finance AI..." : "Start a new conversation..."}
+              placeholder={
+                creatingConversation 
+                  ? "Creating conversation..." 
+                  : conversationId 
+                    ? "Message Finance AI..." 
+                    : "Start a new conversation..."
+              }
               className="min-h-[60px] resize-none"
+              disabled={creatingConversation}
               onKeyDown={(e) => {
                 if (e.key === "Enter" && !e.shiftKey) {
                   e.preventDefault()
@@ -182,9 +250,9 @@ export function ChatInterface() {
               type="submit"
               size="icon"
               className="h-[60px] w-[60px] rounded-full bg-emerald-600 hover:bg-emerald-700 transition-colors"
-              disabled={loading || !input.trim()}
+              disabled={loading || creatingConversation || !input.trim()}
             >
-              {loading ? <Loader2 className="h-5 w-5 animate-spin" /> : <Send className="h-5 w-5" />}
+              {(loading || creatingConversation) ? <Loader2 className="h-5 w-5 animate-spin" /> : <Send className="h-5 w-5" />}
             </Button>
           </form>
         </div>

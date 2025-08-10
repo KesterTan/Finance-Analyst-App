@@ -8,6 +8,7 @@ interface Conversation {
   conversation_id: string
   created_at: number
   message_count: number
+  name?: string
 }
 
 // Helper function to check if configuration is present locally
@@ -33,14 +34,39 @@ export function useConversations() {
     try {
       setLoading(true)
       const response = await fetch("/api/conversations")
+      
+      if (!response.ok && response.status >= 500 && response.status < 600) {
+        toast({
+          title: "Server Connection Error",
+          description: "Unable to connect to the backend server. Please check if the server is running.",
+          variant: "destructive",
+        })
+        return
+      }
+      
       const data = await response.json()
       setConversations(data.conversations || [])
     } catch (error) {
-      toast({
-        title: "Error",
-        description: "Failed to load conversations",
-        variant: "destructive",
-      })
+      // Check for network connectivity errors
+      if (error instanceof TypeError && error.message.includes('Failed to fetch')) {
+        toast({
+          title: "Server Connection Error",
+          description: "Unable to connect to the backend server. Please check if the server is running.",
+          variant: "destructive",
+        })
+      } else if (error instanceof Error && error.name === 'AbortError') {
+        toast({
+          title: "Server Timeout",
+          description: "The server is taking too long to respond. Please check your connection.",
+          variant: "destructive",
+        })
+      } else {
+        toast({
+          title: "Error",
+          description: "Failed to load conversations",
+          variant: "destructive",
+        })
+      }
     } finally {
       setLoading(false)
     }
@@ -134,8 +160,8 @@ export function useConversations() {
       const data = await response.json()
 
       if (data.conversation_id) {
-        router.push(`/chat/${data.conversation_id}`)
         await fetchConversations()
+        return data.conversation_id
       }
     } catch (error) {
       console.error("Create conversation error:", error)
@@ -175,6 +201,58 @@ export function useConversations() {
     }
   }
 
+  const renameConversation = async (conversationId: string, newName: string) => {
+    try {
+      setLoading(true)
+      const response = await fetch(`/api/conversations/${conversationId}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ name: newName }),
+      })
+
+      if (!response.ok) {
+        throw new Error("Failed to rename conversation")
+      }
+
+      // Update local state
+      setConversations(conversations.map(conv => 
+        conv.conversation_id === conversationId 
+          ? { ...conv, name: newName }
+          : conv
+      ))
+
+      toast({
+        title: "Success",
+        description: "Conversation renamed",
+      })
+    } catch (error) {
+      // Check for network connectivity errors
+      if (error instanceof TypeError && error.message.includes('Failed to fetch')) {
+        toast({
+          title: "Server Connection Error",
+          description: "Unable to connect to the backend server. Please check if the server is running.",
+          variant: "destructive",
+        })
+      } else if (error instanceof Error && error.name === 'AbortError') {
+        toast({
+          title: "Server Timeout",
+          description: "The server is taking too long to respond. Please check your connection.",
+          variant: "destructive",
+        })
+      } else {
+        toast({
+          title: "Error",
+          description: "Failed to rename conversation",
+          variant: "destructive",
+        })
+      }
+    } finally {
+      setLoading(false)
+    }
+  }
+
   useEffect(() => {
     fetchConversations()
   }, [])
@@ -183,6 +261,7 @@ export function useConversations() {
     conversations,
     createConversation,
     deleteConversation,
+    renameConversation,
     fetchConversations,
     loading,
   }

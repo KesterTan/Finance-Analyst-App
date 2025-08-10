@@ -9,11 +9,13 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { useToast } from "@/hooks/use-toast"
 import { useConfig } from "@/hooks/use-config"
-import { CheckCircle, AlertCircle, Loader2 } from "lucide-react"
+import { CheckCircle, AlertCircle, Loader2, Home } from "lucide-react"
+import { useRouter } from "next/navigation"
 
 export default function SettingsPage() {
   const { toast } = useToast()
   const { config, updateConfig, loading } = useConfig()
+  const router = useRouter()
 
   const [openaiKey, setOpenaiKey] = useState("")
   const [googleCredentials, setGoogleCredentials] = useState("")
@@ -69,12 +71,37 @@ export default function SettingsPage() {
         
         // Save status to localStorage for persistence
         localStorage.setItem('flask_config_status', JSON.stringify(isConfigured))
+      } else if (response.status >= 500 && response.status < 600) {
+        // Server error - likely connectivity issue
+        toast({
+          title: "Server Connection Error",
+          description: "Unable to connect to the backend server. Please check if the server is running.",
+          variant: "destructive",
+        })
+        setFlaskConfigSent(false)
+        localStorage.setItem('flask_config_status', JSON.stringify(false))
       } else {
         setFlaskConfigSent(false)
         localStorage.setItem('flask_config_status', JSON.stringify(false))
       }
     } catch (error) {
       console.log('Flask backend not available:', error)
+      
+      // Check for network connectivity errors
+      if (error instanceof TypeError && error.message.includes('Failed to fetch')) {
+        toast({
+          title: "Server Connection Error",
+          description: "Unable to connect to the backend server. Please check if the server is running.",
+          variant: "destructive",
+        })
+      } else if (error instanceof Error && error.name === 'AbortError') {
+        toast({
+          title: "Server Timeout",
+          description: "The server is taking too long to respond. Please check your connection.",
+          variant: "destructive",
+        })
+      }
+      
       setFlaskConfigSent(false)
       localStorage.setItem('flask_config_status', JSON.stringify(false))
     }
@@ -276,7 +303,17 @@ export default function SettingsPage() {
 
   return (
     <div className="w-full px-4 sm:px-6 lg:px-8 py-10 bg-gradient-to-br from-teal-50 to-emerald-50 dark:from-zinc-900 dark:to-emerald-950 min-h-screen">
-      <h1 className="text-3xl font-bold mb-6">Settings</h1>
+      <div className="flex items-center justify-between mb-6">
+        <h1 className="text-3xl font-bold">Settings</h1>
+        <Button
+          onClick={() => router.push('/')}
+          variant="outline"
+          className="flex items-center gap-2"
+        >
+          <Home className="h-4 w-4" />
+          Back to Chat
+        </Button>
+      </div>
 
       {initialLoading && (
         <div className="flex items-center justify-center p-8">
