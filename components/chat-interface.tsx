@@ -27,16 +27,12 @@ export function ChatInterface() {
   const [iframeError, setIframeError] = useState(false)
   const [isFullscreen, setIsFullscreen] = useState(false)
   const [chatMinimized, setChatMinimized] = useState(false)
-  
-  // Local loading state for conversation creation
-  const [creatingConversation, setCreatingConversation] = useState(false)
-  const [sendingPendingMessage, setSendingPendingMessage] = useState(false)
 
   const { messages, sendMessage, loading } = useChat(conversationId as string)
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!input.trim() || loading || creatingConversation || sendingPendingMessage) return
+    if (!input.trim() || loading) return
 
     const userMessage = input
     setInput("")
@@ -44,26 +40,16 @@ export function ChatInterface() {
     // If no conversation exists, create one first
     if (!conversationId) {
       try {
-        setCreatingConversation(true)
-        
         const newConversationId = await createConversation()
         if (newConversationId) {
+          // Navigate to the new conversation and the sendMessage will handle it
+          router.push(`/chat/${newConversationId}`)
           // Store the message to send after navigation
           sessionStorage.setItem('pendingMessage', userMessage)
-          // Navigate to the new conversation 
-          router.push(`/chat/${newConversationId}`)
           return
-        } else {
-          throw new Error("Failed to create conversation")
         }
       } catch (error) {
         console.error('Failed to create conversation:', error)
-        toast({
-          title: "Error",
-          description: "Failed to create new conversation. Please try again.",
-          variant: "destructive",
-        })
-        setCreatingConversation(false)
         return
       }
     }
@@ -117,26 +103,18 @@ export function ChatInterface() {
 
   // Handle pending message after navigation
   useEffect(() => {
-    if (conversationId && !creatingConversation && !sendingPendingMessage) {
+    if (conversationId) {
       const pendingMessage = sessionStorage.getItem('pendingMessage')
       if (pendingMessage) {
         sessionStorage.removeItem('pendingMessage')
-        setSendingPendingMessage(true)
+        setInput(pendingMessage)
         // Auto-send the pending message
-        setTimeout(async () => {
-          await sendMessage(pendingMessage)
-          setSendingPendingMessage(false)
+        setTimeout(() => {
+          sendMessage(pendingMessage)
         }, 100)
       }
     }
-  }, [conversationId, sendMessage, creatingConversation, sendingPendingMessage])
-
-  // Clear creating conversation state when we have a conversation ID
-  useEffect(() => {
-    if (conversationId && creatingConversation) {
-      setCreatingConversation(false)
-    }
-  }, [conversationId, creatingConversation])
+  }, [conversationId, sendMessage])
 
   return (
     <div className="flex h-full">
@@ -184,7 +162,7 @@ export function ChatInterface() {
           "flex-1 overflow-y-auto transition-all duration-300",
           chatMinimized ? "hidden" : "block p-4 space-y-6"
         )}>
-          {messages.length === 0 && !creatingConversation && !sendingPendingMessage ? (
+          {messages.length === 0 ? (
             <div className="flex items-center justify-center h-full">
               <div className="text-center">
                 <h2 className="text-2xl font-bold mb-2">Finance AI Assistant</h2>
@@ -193,18 +171,6 @@ export function ChatInterface() {
                     ? "Ask me about financial data, reports, or analysis."
                     : "Start a new conversation by asking about financial data, reports, or analysis."
                   }
-                </p>
-              </div>
-            </div>
-          ) : (creatingConversation || sendingPendingMessage) ? (
-            <div className="flex items-center justify-center h-full">
-              <div className="text-center">
-                <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4 text-emerald-600" />
-                <h3 className="text-lg font-medium mb-2">
-                  {creatingConversation ? "Creating new conversation..." : "Setting up chat..."}
-                </h3>
-                <p className="text-zinc-500 dark:text-zinc-400">
-                  Please wait while we set up your chat.
                 </p>
               </div>
             </div>
@@ -240,15 +206,8 @@ export function ChatInterface() {
             <Textarea
               value={input}
               onChange={(e) => setInput(e.target.value)}
-              placeholder={
-                (creatingConversation || sendingPendingMessage)
-                  ? "Setting up conversation..." 
-                  : conversationId 
-                    ? "Message Finance AI..." 
-                    : "Start a new conversation..."
-              }
+              placeholder={conversationId ? "Message Finance AI..." : "Start a new conversation..."}
               className="min-h-[60px] resize-none"
-              disabled={creatingConversation || sendingPendingMessage}
               onKeyDown={(e) => {
                 if (e.key === "Enter" && !e.shiftKey) {
                   e.preventDefault()
@@ -260,9 +219,9 @@ export function ChatInterface() {
               type="submit"
               size="icon"
               className="h-[60px] w-[60px] rounded-full bg-emerald-600 hover:bg-emerald-700 transition-colors"
-              disabled={loading || creatingConversation || sendingPendingMessage || !input.trim()}
+              disabled={loading || !input.trim()}
             >
-              {(loading || creatingConversation || sendingPendingMessage) ? <Loader2 className="h-5 w-5 animate-spin" /> : <Send className="h-5 w-5" />}
+              {loading ? <Loader2 className="h-5 w-5 animate-spin" /> : <Send className="h-5 w-5" />}
             </Button>
           </form>
         </div>
@@ -332,10 +291,7 @@ export function ChatInterface() {
               <div className="flex items-center justify-center h-full p-8">
                 <div className="text-center">
                   <div className="text-zinc-500 dark:text-zinc-400 mb-4">
-                    {activeUrl?.includes('docs.google.com/spreadsheets') 
-                      ? "This Google Sheet may need to be published to the web or shared publicly to be embedded. Try opening it in a new tab to view all worksheets."
-                      : "This page cannot be embedded"
-                    }
+                    This page cannot be embedded
                   </div>
                   <Button
                     onClick={() => window.open(activeUrl, '_blank')}
@@ -351,10 +307,8 @@ export function ChatInterface() {
                 src={activeUrl}
                 className="w-full h-full border-0"
                 onError={handleIframeError}
-                sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox"
+                sandbox="allow-same-origin allow-scripts allow-forms allow-popups"
                 title="Embedded Content"
-                allow="clipboard-read; clipboard-write"
-                style={{ minHeight: '600px' }}
               />
             )}
           </div>

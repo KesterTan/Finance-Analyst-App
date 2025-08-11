@@ -1,33 +1,12 @@
 // Utility functions for link detection and iframe handling
-import React from 'react';
 
-// Regular expression to detect URLs (improved to handle markdown links)
-export const URL_REGEX = /(https?:\/\/[^\s\)]+)/g;
+// Regular expression to detect URLs
+export const URL_REGEX = /(https?:\/\/[^\s]+)/g;
 
-// Regular expression to detect markdown-style links [text](url)
-export const MARKDOWN_LINK_REGEX = /\[([^\]]+)\]\((https?:\/\/[^\)]+)\)/g;
-
-// Function to extract URLs from text (including markdown links)
+// Function to extract URLs from text
 export function extractUrls(text: string): string[] {
-  const urls: string[] = [];
-  
-  // Extract markdown links
-  const markdownMatches = Array.from(text.matchAll(MARKDOWN_LINK_REGEX));
-  markdownMatches.forEach(match => {
-    urls.push(match[2]); // The URL part of [text](url)
-  });
-  
-  // Extract plain URLs (but ignore those already captured in markdown)
-  const plainMatches = text.match(URL_REGEX) || [];
-  plainMatches.forEach(url => {
-    // Check if this URL is not already captured as part of a markdown link
-    const isInMarkdown = markdownMatches.some(match => match[0].includes(url));
-    if (!isInMarkdown) {
-      urls.push(url);
-    }
-  });
-  
-  return urls;
+  const matches = text.match(URL_REGEX);
+  return matches || [];
 }
 
 // Function to check if a URL is embeddable (not blocked by X-Frame-Options)
@@ -93,26 +72,7 @@ export function getEmbeddableUrl(url: string): string {
         urlObj.hostname.includes('slides.google.com') ||
         urlObj.hostname.includes('drive.google.com')) {
       
-      // Special handling for Google Sheets
-      if (urlObj.hostname.includes('sheets.google.com') || 
-          (urlObj.hostname.includes('docs.google.com') && url.includes('/spreadsheets/'))) {
-        
-        // Extract the sheet ID from various URL formats
-        const sheetIdMatch = url.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
-        if (sheetIdMatch) {
-          const sheetId = sheetIdMatch[1];
-
-          // Try the pubhtml format first (works best for embedding all sheets)
-          // If that fails, the iframe will show an error and we can fall back
-          const pubhtmlUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/pubhtml?widget=true&headers=false`;
-          
-          // For now, let's use the edit URL with minimal UI which usually works
-          // and preserves sheet tabs at the bottom
-          return `https://docs.google.com/spreadsheets/d/${sheetId}/edit?usp=sharing&rm=minimal`;
-        }
-      }
-      
-      // Convert edit URLs to preview format for other Google services
+      // Convert edit URLs to preview format
       if (url.includes('/edit')) {
         return url.replace('/edit', '/preview');
       }
@@ -135,89 +95,31 @@ export function getEmbeddableUrl(url: string): string {
 
 // Function to render content with clickable links
 export function renderContentWithLinks(content: string, onLinkClick: (url: string) => void) {
-  let processedContent = content;
-  const elements: (string | React.ReactElement)[] = [];
-  let lastIndex = 0;
-  let elementKey = 0;
+  const urls = extractUrls(content);
   
-  // First, process markdown links [text](url)
-  const markdownMatches = Array.from(content.matchAll(MARKDOWN_LINK_REGEX));
-  
-  // Define match types
-  type MatchType = 'markdown' | 'plain';
-  
-  // Sort matches by their position in the string
-  const allMatches: Array<{
-    type: MatchType;
-    match: RegExpMatchArray;
-    start: number;
-    end: number;
-    text: string;
-    url: string;
-  }> = [
-    ...markdownMatches.map(match => ({
-      type: 'markdown' as MatchType,
-      match,
-      start: match.index!,
-      end: match.index! + match[0].length,
-      text: match[1], // The display text
-      url: match[2]   // The URL
-    }))
-  ];
-  
-  // Add plain URL matches that aren't part of markdown links
-  const plainUrlMatches = Array.from(content.matchAll(URL_REGEX));
-  plainUrlMatches.forEach(match => {
-    const isInMarkdown = markdownMatches.some(mdMatch => 
-      match.index! >= mdMatch.index! && 
-      match.index! < mdMatch.index! + mdMatch[0].length
-    );
-    
-    if (!isInMarkdown) {
-      allMatches.push({
-        type: 'plain' as MatchType,
-        match,
-        start: match.index!,
-        end: match.index! + match[0].length,
-        text: match[0], // The URL itself as display text
-        url: match[0]   // The URL
-      });
-    }
-  });
-  
-  // Sort all matches by position
-  allMatches.sort((a, b) => a.start - b.start);
-  
-  // Build the final content with clickable links
-  allMatches.forEach(({ start, end, text, url }) => {
-    // Add text before the link
-    if (start > lastIndex) {
-      elements.push(content.slice(lastIndex, start));
-    }
-    
-    // Add the clickable link
-    elements.push(
-      <button
-        key={elementKey++}
-        onClick={(e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          onLinkClick(url);
-        }}
-        className="text-blue-500 hover:text-blue-700 underline break-all cursor-pointer"
-        type="button"
-      >
-        {text}
-      </button>
-    );
-    
-    lastIndex = end;
-  });
-  
-  // Add remaining text after the last link
-  if (lastIndex < content.length) {
-    elements.push(content.slice(lastIndex));
+  if (urls.length === 0) {
+    return content;
   }
   
-  return elements.length > 0 ? elements : content;
+  const parts = content.split(URL_REGEX);
+  
+  return parts.map((part, index) => {
+    if (urls.includes(part)) {
+      return (
+        <button
+          key={index}
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            onLinkClick(part);
+          }}
+          className="text-blue-500 hover:text-blue-700 underline break-all cursor-pointer"
+          type="button"
+        >
+          {part}
+        </button>
+      );
+    }
+    return part;
+  });
 }
