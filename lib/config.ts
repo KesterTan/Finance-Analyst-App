@@ -2,7 +2,7 @@
 export const API_CONFIG = {
   // Flask backend URL - update this to match your Flask server
   FLASK_BASE_URL: process.env.FLASK_API_URL || 'http://localhost:5000',
-  
+
   // API endpoints
   ENDPOINTS: {
     HEALTH: '/health',
