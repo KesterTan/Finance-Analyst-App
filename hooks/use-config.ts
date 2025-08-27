@@ -31,14 +31,26 @@ export function useConfig() {
       // For demo purposes, we'll use localStorage
       const storedConfig = localStorage.getItem("app_config")
       if (storedConfig) {
-        setConfig(JSON.parse(storedConfig))
+        try {
+          const parsedConfig = JSON.parse(storedConfig)
+          setConfig(parsedConfig || {})
+        } catch (parseError) {
+          console.error("Failed to parse stored config:", parseError)
+          // Reset invalid config
+          localStorage.removeItem("app_config")
+          setConfig({})
+        }
+      } else {
+        setConfig({})
       }
     } catch (error) {
+      console.error("Failed to load configuration:", error)
       toast({
         title: "Error",
         description: "Failed to load configuration",
         variant: "destructive",
       })
+      setConfig({})
     } finally {
       setLoading(false)
     }
@@ -48,9 +60,9 @@ export function useConfig() {
     try {
       setLoading(true)
 
-      // Merge with existing config
+      // Merge with existing config (ensure config is not null)
       const updatedConfig = {
-        ...config,
+        ...(config || {}),
         ...newConfig,
       }
 

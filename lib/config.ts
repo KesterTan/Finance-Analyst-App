@@ -16,8 +16,8 @@ export const API_CONFIG = {
     CONFIG_STATUS: '/api/config/status',
   },
   
-  // Request timeout in milliseconds
-  TIMEOUT: 30000,
+  // Request timeout in milliseconds (reduced from 30s to 15s)
+  TIMEOUT: 15000,
 } as const;
 
 // Helper function to build full URLs

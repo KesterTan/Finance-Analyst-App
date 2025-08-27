@@ -34,9 +34,17 @@ export default function SettingsPage() {
 
   // Update state when config loads
   useEffect(() => {
-    if (config) {
+    if (config !== null) { // Check if config has been loaded (even if empty)
       setOpenaiKey(config.OPENAI_API_KEY || "")
-      setGoogleCredentials(JSON.stringify(config.GOOGLE_OAUTH_CREDENTIALS_JSON || {}, null, 2))
+      
+      // Safely handle Google credentials
+      const googleCreds = config.GOOGLE_OAUTH_CREDENTIALS_JSON
+      if (googleCreds && typeof googleCreds === 'object') {
+        setGoogleCredentials(JSON.stringify(googleCreds, null, 2))
+      } else {
+        setGoogleCredentials("")
+      }
+      
       setLlmModel(config.LLM_MODEL || "gpt-4")
       setLlmTemperature(config.LLM_TEMPERATURE?.toString() || "0.1")
       setLlmTimeout(config.LLM_TIMEOUT?.toString() || "120")
@@ -46,6 +54,13 @@ export default function SettingsPage() {
       setInitialLoading(false)
     }
   }, [config])
+
+  // Ensure loading state is cleared even if config fails to load
+  useEffect(() => {
+    if (!loading && config !== null) {
+      setInitialLoading(false)
+    }
+  }, [loading, config])
 
   // Check Flask backend status on component mount
   useEffect(() => {
@@ -62,7 +77,16 @@ export default function SettingsPage() {
   // Function to check if Flask backend is configured
   const checkFlaskBackendStatus = async () => {
     try {
-      const response = await fetch('/api/config/llm') // This now calls /api/config/status on Flask
+      // Add a shorter timeout for the initial check
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+      
+      const response = await fetch('/api/config/llm', {
+        signal: controller.signal
+      }); // This now calls /api/config/status on Flask
+      
+      clearTimeout(timeoutId);
+      
       if (response.ok) {
         const data = await response.json()
         // Check if both required configs are set (OpenAI and Google)
