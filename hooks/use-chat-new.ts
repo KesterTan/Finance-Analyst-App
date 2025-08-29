@@ -106,47 +106,6 @@ export function useChat(conversationId?: string) {
     try {
       setLoading(true)
 
-      // If no conversation ID, create a new conversation first and redirect
-      if (!conversationId) {
-        console.log("No conversation ID, creating new conversation...")
-        const createResponse = await fetch("/api/conversations", {
-          method: "POST",
-        })
-        
-        if (!createResponse.ok) {
-          const errorData = await createResponse.json()
-          
-          if (createResponse.status === 424 || errorData.flask_error?.includes('llm_config')) {
-            if (!isConfiguredLocally()) {
-              toast({
-                title: "Configuration Required",
-                description: errorData.suggestion || "Please configure OpenAI and Google settings first",
-                variant: "destructive",
-              })
-              router.push("/settings")
-              return
-            } else {
-              toast({
-                title: "Backend Configuration Issue",
-                description: "Your settings may not be synced with the backend. Please check Settings page.",
-                variant: "destructive",
-              })
-              return
-            }
-          }
-          
-          throw new Error(errorData.details || "Failed to create conversation")
-        }
-        
-        const createData = await createResponse.json()
-        if (createData.conversation_id) {
-          // Store the message in localStorage temporarily and redirect
-          localStorage.setItem('pending_message', content)
-          router.push(`/chat/${createData.conversation_id}`)
-          return
-        }
-      }
-
       // Check if there's a pending message from localStorage (from conversation creation)
       const pendingMsg = localStorage.getItem('pending_message')
       let messageToSend = content

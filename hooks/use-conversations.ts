@@ -253,6 +253,54 @@ export function useConversations() {
     }
   }
 
+  // Function specifically for home page - gets existing conversation or creates one only if none exist
+  const getOrCreateConversation = async () => {
+    try {
+      // Check if we're already in the process of creating a conversation
+      const isCreating = localStorage.getItem('creating_conversation')
+      if (isCreating === 'true') {
+        console.log('Already creating a conversation, waiting...')
+        // Wait a bit and try again
+        await new Promise(resolve => setTimeout(resolve, 500))
+        // Fetch latest conversations to see if one was created
+        await fetchConversations()
+        if (conversations.length > 0) {
+          const mostRecentConversation = conversations.sort((a, b) => b.created_at - a.created_at)[0]
+          return mostRecentConversation.conversation_id
+        }
+      }
+
+      // If conversations already exist, return the most recent one
+      if (conversations.length > 0) {
+        console.log(`Found ${conversations.length} existing conversations, returning most recent`)
+        const mostRecentConversation = conversations.sort((a, b) => b.created_at - a.created_at)[0]
+        return mostRecentConversation.conversation_id
+      }
+      
+      // Set flag to indicate we're creating a conversation
+      localStorage.setItem('creating_conversation', 'true')
+      
+      try {
+        // Only create a new conversation if none exist
+        console.log('No conversations found, creating first conversation...')
+        const newConversationId = await createConversation()
+        
+        // Clear the flag
+        localStorage.removeItem('creating_conversation')
+        
+        return newConversationId
+      } catch (error) {
+        // Make sure to clear the flag on error
+        localStorage.removeItem('creating_conversation')
+        throw error
+      }
+    } catch (error) {
+      console.error('Error in getOrCreateConversation:', error)
+      localStorage.removeItem('creating_conversation')
+      return null
+    }
+  }
+
   useEffect(() => {
     fetchConversations()
   }, [])
@@ -260,6 +308,7 @@ export function useConversations() {
   return {
     conversations,
     createConversation,
+    getOrCreateConversation,
     deleteConversation,
     renameConversation,
     fetchConversations,

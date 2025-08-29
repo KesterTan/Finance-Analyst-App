@@ -11,10 +11,14 @@ import { ChatMessage } from "@/components/chat-message"
 import { useChat } from "@/hooks/use-chat"
 import { useToast } from "@/hooks/use-toast"
 import { useConversations } from "@/hooks/use-conversations"
-import { extractUrls, isEmbeddableUrl, getEmbeddableUrl } from "@/lib/link-utils"
+import { extractAllLinks, isEmbeddableUrl, getEmbeddableUrl, isFilePath, isApiEndpoint } from "@/lib/link-utils"
 import { cn } from "@/lib/utils"
 
-export function ChatInterface() {
+interface ChatInterfaceProps {
+  onIframeStateChange?: (isActive: boolean) => void
+}
+
+export function ChatInterface({ onIframeStateChange }: ChatInterfaceProps) {
   const { conversationId } = useParams()
   const router = useRouter()
   const { toast } = useToast()
@@ -37,34 +41,38 @@ export function ChatInterface() {
     const userMessage = input
     setInput("")
 
-    // If no conversation exists, create one first
-    if (!conversationId) {
-      try {
-        const newConversationId = await createConversation()
-        if (newConversationId) {
-          // Navigate to the new conversation and the sendMessage will handle it
-          router.push(`/chat/${newConversationId}`)
-          // Store the message to send after navigation
-          sessionStorage.setItem('pendingMessage', userMessage)
-          return
-        }
-      } catch (error) {
-        console.error('Failed to create conversation:', error)
-        return
-      }
-    }
-
     await sendMessage(userMessage)
   }
 
   const handleLinkClick = (url: string) => {
     console.log(`Link clicked: ${url}`)
+    console.log(`Is file path: ${isFilePath(url)}`)
+    console.log(`Is API endpoint: ${isApiEndpoint(url)}`)
     console.log(`Is embeddable: ${isEmbeddableUrl(url)}`)
     
     if (isEmbeddableUrl(url)) {
-      const embeddableUrl = getEmbeddableUrl(url)
-      console.log(`Setting activeUrl to: ${embeddableUrl}`)
-      setActiveUrl(embeddableUrl)
+      console.log(`Original URL: ${url}`)
+      // Use API endpoints directly, convert file paths if needed
+      let iframeUrl = url;
+      
+      if (isApiEndpoint(url)) {
+        // For API endpoints, use the backend server URL
+        const backendUrl = process.env.NEXT_PUBLIC_FLASK_BACKEND_URL || "http://localhost:5000";
+        iframeUrl = `${backendUrl}${url}`;
+        console.log(`Using backend API endpoint: ${iframeUrl}`)
+      } else if (isFilePath(url)) {
+        // For file paths, you might want to convert to API endpoint
+        // For now, using original URL
+        console.log(`Using file path as-is: ${url}`)
+        iframeUrl = url;
+      } else {
+        // For other URLs (Google Sheets, etc.), use getEmbeddableUrl
+        iframeUrl = getEmbeddableUrl(url);
+        console.log(`Converted to embeddable URL: ${iframeUrl}`)
+      }
+      
+      console.log(`Setting activeUrl to: ${iframeUrl}`)
+      setActiveUrl("http://localhost:5000/api/reports/financial_analysis_20250828_012138")
       setIframeError(false)
     } else {
       console.log(`Opening in new tab: ${url}`)
@@ -78,6 +86,7 @@ export function ChatInterface() {
     setIframeError(false)
     setIsFullscreen(false)
     setChatMinimized(false)
+    // The useEffect will handle notifying the parent
   }
 
   const handleIframeError = () => {
@@ -100,6 +109,13 @@ export function ChatInterface() {
   useEffect(() => {
     console.log(`activeUrl changed to: ${activeUrl}`)
   }, [activeUrl])
+
+  // Notify parent about iframe state changes
+  useEffect(() => {
+    if (onIframeStateChange) {
+      onIframeStateChange(!!activeUrl)
+    }
+  }, [activeUrl, onIframeStateChange])
 
   // Handle pending message after navigation
   useEffect(() => {
@@ -304,11 +320,11 @@ export function ChatInterface() {
               </div>
             ) : (
               <iframe
-                src={activeUrl}
+                src="http://localhost:5000/api/reports/financial_analysis_20250828_012138"
                 className="w-full h-full border-0"
-                onError={handleIframeError}
-                sandbox="allow-same-origin allow-scripts allow-forms allow-popups"
-                title="Embedded Content"
+                // onError={handleIframeError}
+                // sandbox="allow-same-origin allow-scripts allow-forms allow-popups"
+                // title="Embedded Content"
               />
             )}
           </div>
