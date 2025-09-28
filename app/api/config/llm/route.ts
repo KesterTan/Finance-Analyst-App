@@ -1,10 +1,18 @@
-import { NextResponse } from "next/server"
+import { NextResponse, NextRequest } from "next/server"
 import { buildApiUrl, makeFlaskRequest, API_CONFIG } from "@/lib/config"
 
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
   try {
     const data = await request.json()
-    const { openaiKey, llmModel, llmTemperature, llmTimeout } = data
+    const { openaiKey, llmModel, llmTemperature, llmTimeout, userId } = data
+
+    // Validate userId is provided
+    if (!userId) {
+      return NextResponse.json({
+        error: "User ID is required",
+        details: "User ID must be provided in the request body"
+      }, { status: 400 })
+    }
 
     if (!openaiKey) {
       return NextResponse.json({ error: "OpenAI API key is required" }, { status: 400 })
@@ -20,10 +28,12 @@ export async function POST(request: Request) {
 
     // Send to Flask backend
     const flaskUrl = buildApiUrl(API_CONFIG.ENDPOINTS.CONFIG_OPENAI)
+    console.log(`Sending OpenAI config for user: ${userId}`)
+    
     const response = await makeFlaskRequest(flaskUrl, {
       method: 'POST',
       body: JSON.stringify(openaiConfig),
-    })
+    }, userId)
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({ error: 'Unknown error' }))
@@ -50,11 +60,24 @@ export async function POST(request: Request) {
   }
 }
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
+    // Get userId from query parameters
+    const { searchParams } = new URL(request.url)
+    const userId = searchParams.get('userId')
+    
+    if (!userId) {
+      return NextResponse.json({
+        error: "User ID is required",
+        details: "User ID must be provided as a query parameter"
+      }, { status: 400 })
+    }
+
     // Get current config status from Flask backend
     const flaskUrl = buildApiUrl(API_CONFIG.ENDPOINTS.CONFIG_STATUS)
-    const response = await makeFlaskRequest(flaskUrl)
+    console.log(`Getting config status for user: ${userId}`)
+    
+    const response = await makeFlaskRequest(flaskUrl, {}, userId)
 
     if (!response.ok) {
       throw new Error(`Flask API responded with status: ${response.status}`)

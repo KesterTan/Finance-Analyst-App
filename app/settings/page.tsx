@@ -9,13 +9,15 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { useToast } from "@/hooks/use-toast"
 import { useConfig } from "@/hooks/use-config"
-import { CheckCircle, AlertCircle, Loader2, Home } from "lucide-react"
+import { CheckCircle, AlertCircle, Loader2, Home, User, LogOut, Mail, Calendar, Shield } from "lucide-react"
 import { useRouter } from "next/navigation"
+import { useUser } from '@auth0/nextjs-auth0'
 
 export default function SettingsPage() {
   const { toast } = useToast()
   const { config, updateConfig, loading } = useConfig()
   const router = useRouter()
+  const { user, isLoading } = useUser()
 
   const [openaiKey, setOpenaiKey] = useState("")
   const [googleCredentials, setGoogleCredentials] = useState("")
@@ -31,6 +33,10 @@ export default function SettingsPage() {
   const [flaskConfigSent, setFlaskConfigSent] = useState(false)
   const [sendingToFlask, setSendingToFlask] = useState(false)
   const [initialLoading, setInitialLoading] = useState(true)
+
+  const handleLogout = () => {
+    window.location.href = '/auth/logout'
+  }
 
   // Update state when config loads
   useEffect(() => {
@@ -67,7 +73,14 @@ export default function SettingsPage() {
     // Load Flask status from localStorage first (for immediate UI feedback)
     const savedFlaskStatus = localStorage.getItem('flask_config_status')
     if (savedFlaskStatus) {
-      setFlaskConfigSent(JSON.parse(savedFlaskStatus))
+      try {
+        setFlaskConfigSent(JSON.parse(savedFlaskStatus))
+      } catch (error) {
+        console.error('Error parsing Flask config status from localStorage:', error)
+        // Clear invalid data
+        localStorage.removeItem('flask_config_status')
+        setFlaskConfigSent(false)
+      }
     }
     
     // Then check actual Flask status
@@ -81,7 +94,7 @@ export default function SettingsPage() {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
       
-      const response = await fetch('/api/config/llm', {
+      const response = await fetch(`/api/config/llm?userId=${user?.sub}`, {
         signal: controller.signal
       }); // This now calls /api/config/status on Flask
       
@@ -145,6 +158,7 @@ export default function SettingsPage() {
           llmModel: configData.LLM_MODEL,
           llmTemperature: configData.LLM_TEMPERATURE,
           llmTimeout: configData.LLM_TIMEOUT,
+          userId: user?.sub, // Include user ID from Auth0
         }),
       })
 
@@ -179,6 +193,7 @@ export default function SettingsPage() {
         },
         body: JSON.stringify({
           googleCredentials: parsedCredentials,
+          userId: user?.sub, // Include user ID from Auth0
         }),
       })
 
@@ -347,12 +362,151 @@ export default function SettingsPage() {
       )}
 
       {!initialLoading && (
-      <Tabs defaultValue="google">
+      <Tabs defaultValue="profile">
         <TabsList className="mb-6">
+          <TabsTrigger value="profile">Profile</TabsTrigger>
           <TabsTrigger value="google">Google</TabsTrigger>
           <TabsTrigger value="openai">OpenAI</TabsTrigger>
           <TabsTrigger value="xero">Xero</TabsTrigger>
         </TabsList>
+
+        <TabsContent value="profile">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <User className="h-5 w-5" />
+                User Profile
+              </CardTitle>
+              <CardDescription>Manage your account information and preferences.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {isLoading ? (
+                <div className="flex items-center justify-center p-8">
+                  <Loader2 className="h-6 w-6 animate-spin mr-2" />
+                  <span>Loading profile...</span>
+                </div>
+              ) : user ? (
+                <div className="space-y-6">
+                  <div className="flex items-center space-x-4">
+                    <div className="h-16 w-16 rounded-full overflow-hidden bg-gradient-to-r from-blue-500 to-purple-600 flex items-center justify-center">
+                      {user.picture ? (
+                        <img
+                          src={user.picture}
+                          alt="Profile"
+                          className="w-full h-full object-cover"
+                        />
+                      ) : (
+                        <span className="text-white font-semibold text-xl">
+                          {user.name ? user.name.charAt(0).toUpperCase() : 'U'}
+                        </span>
+                      )}
+                    </div>
+                    <div>
+                      <h3 className="text-lg font-semibold">{user.name || 'User'}</h3>
+                      <p className="text-sm text-muted-foreground">{user.email}</p>
+                    </div>
+                  </div>
+
+                  <div className="grid gap-4">
+                    <div className="grid grid-cols-3 items-center gap-4">
+                      <Label htmlFor="profile-name" className="flex items-center gap-2">
+                        <User className="h-4 w-4" />
+                        Name
+                      </Label>
+                      <Input
+                        id="profile-name"
+                        value={user.name || ''}
+                        disabled
+                        className="col-span-2"
+                      />
+                    </div>
+                    
+                    <div className="grid grid-cols-3 items-center gap-4">
+                      <Label htmlFor="profile-email" className="flex items-center gap-2">
+                        <Mail className="h-4 w-4" />
+                        Email
+                      </Label>
+                      <Input
+                        id="profile-email"
+                        value={user.email || ''}
+                        disabled
+                        className="col-span-2"
+                      />
+                    </div>
+
+                    <div className="grid grid-cols-3 items-center gap-4">
+                      <Label htmlFor="profile-sub" className="flex items-center gap-2">
+                        <Shield className="h-4 w-4" />
+                        User ID
+                      </Label>
+                      <Input
+                        id="profile-sub"
+                        value={user.sub || ''}
+                        disabled
+                        className="col-span-2 text-xs"
+                      />
+                    </div>
+
+                    {user.updated_at && (
+                      <div className="grid grid-cols-3 items-center gap-4">
+                        <Label htmlFor="profile-updated" className="flex items-center gap-2">
+                          <Calendar className="h-4 w-4" />
+                          Last Updated
+                        </Label>
+                        <Input
+                          id="profile-updated"
+                          value={new Date(user.updated_at).toLocaleDateString()}
+                          disabled
+                          className="col-span-2"
+                        />
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="pt-4 border-t">
+                    <div className="flex flex-col space-y-2">
+                      <p className="text-sm text-muted-foreground">
+                        Account management is handled through Auth0. To update your profile information, 
+                        you may need to contact support or update through your authentication provider.
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Debug: Show user object in development */}
+                  {/* {process.env.NODE_ENV === 'development' && (
+                    <div className="mt-6 p-4 bg-muted rounded-md">
+                      <Label className="text-sm font-medium mb-2 block">Debug: User Object</Label>
+                      <pre className="text-xs bg-background p-2 rounded border overflow-auto max-h-40">
+                        {JSON.stringify(user, null, 2)}
+                      </pre>
+                    </div>
+                  )} */}
+                </div>
+              ) : (
+                <div className="text-center p-8">
+                  <AlertCircle className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                  <p className="text-muted-foreground">Failed to load profile information</p>
+                </div>
+              )}
+            </CardContent>
+            <CardFooter className="flex justify-between">
+              <Button
+                variant="outline"
+                onClick={() => router.push('/')}
+              >
+                <Home className="h-4 w-4 mr-2" />
+                Back to Dashboard
+              </Button>
+              <Button
+                variant="destructive"
+                onClick={handleLogout}
+              >
+                <LogOut className="h-4 w-4 mr-2" />
+                Sign Out
+              </Button>
+            </CardFooter>
+          </Card>
+        </TabsContent>
 
         <TabsContent value="google">
           <Card>

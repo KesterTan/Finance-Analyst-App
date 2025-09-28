@@ -36,19 +36,27 @@ export function buildApiUrl(endpoint: string, params?: Record<string, string>): 
 // Helper function to make API requests to Flask backend
 export async function makeFlaskRequest(
   url: string, 
-  options: RequestInit = {}
+  options: RequestInit = {},
+  userId?: string
 ): Promise<Response> {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), API_CONFIG.TIMEOUT);
   
   try {
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      ...options.headers as Record<string, string>,
+    };
+    
+    // Always include userId in X-User-Id header if provided
+    if (userId) {
+      headers['X-User-Id'] = userId;
+    }
+    
     const response = await fetch(url, {
       ...options,
       signal: controller.signal,
-      headers: {
-        'Content-Type': 'application/json',
-        ...options.headers,
-      },
+      headers,
     });
     
     clearTimeout(timeoutId);

@@ -15,11 +15,12 @@ import { extractAllLinks, isEmbeddableUrl, getEmbeddableUrl, isFilePath, isApiEn
 import { cn } from "@/lib/utils"
 
 interface ChatInterfaceProps {
+  conversationId?: string
   onIframeStateChange?: (isActive: boolean) => void
 }
 
-export function ChatInterface({ onIframeStateChange }: ChatInterfaceProps) {
-  const { conversationId } = useParams()
+export function ChatInterface({ conversationId: propConversationId, onIframeStateChange }: ChatInterfaceProps) {
+  const { conversationId: rawConversationId } = useParams()
   const router = useRouter()
   const { toast } = useToast()
   const { createConversation } = useConversations()
@@ -32,7 +33,10 @@ export function ChatInterface({ onIframeStateChange }: ChatInterfaceProps) {
   const [isFullscreen, setIsFullscreen] = useState(false)
   const [chatMinimized, setChatMinimized] = useState(false)
 
-  const { messages, sendMessage, loading } = useChat(conversationId as string)
+  // Use prop if provided, otherwise extract from params - only use if it exists and isn't undefined
+  const urlConversationId = rawConversationId && rawConversationId !== 'undefined' ? rawConversationId as string : undefined
+  const conversationId = propConversationId || urlConversationId
+  const { messages, sendMessage, loading } = useChat(conversationId)
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()

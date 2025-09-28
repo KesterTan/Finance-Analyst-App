@@ -7,14 +7,26 @@ export async function GET(
   try {
     const { conversationId } = await params
 
+    // Get userId from query parameters
+    const { searchParams } = new URL(request.url)
+    const userId = searchParams.get('userId')
+    
+    if (!userId) {
+      return NextResponse.json({
+        error: "User ID is required",
+        details: "User ID must be provided as a query parameter"
+      }, { status: 400 })
+    }
+
     // Get Flask backend URL from environment
     const flaskUrl = process.env.FLASK_BACKEND_URL || "http://localhost:5000"
     
-    // Forward request to Flask backend
+    // Forward request to Flask backend with userId as header
     const response = await fetch(`${flaskUrl}/api/conversations/${conversationId}/status`, {
       method: 'GET',
       headers: {
         'Content-Type': 'application/json',
+        'X-User-Id': userId
       }
     })
 

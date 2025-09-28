@@ -7,6 +7,7 @@ export async function POST(
   try {
     const { conversationId } = await params
     const body = await request.json()
+    const { userId } = body
 
     // Validate required fields
     if (!body.user_input) {
@@ -19,16 +20,24 @@ export async function POST(
       )
     }
 
+    if (!userId) {
+      return NextResponse.json({
+        error: "User ID is required",
+        details: "User ID must be provided in the request body"
+      }, { status: 400 })
+    }
+
     // Get Flask backend URL from environment
     const flaskUrl = process.env.FLASK_BACKEND_URL || "http://localhost:5000"
     
-    // Forward request to Flask backend
+    // Forward request to Flask backend with userId as header
     const response = await fetch(`${flaskUrl}/api/conversations/${conversationId}/continue`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        'X-User-Id': userId
       },
-      body: JSON.stringify(body)
+      body: JSON.stringify({ user_input: body.user_input })
     })
 
     if (!response.ok) {

@@ -1,10 +1,17 @@
 "use client"
 
-import { useState } from "react"
+import { useState, use } from "react"
 import { Sidebar } from "@/components/sidebar"
 import { ChatInterface } from "@/components/chat-interface"
 
-export default function ChatPage() {
+interface ChatPageProps {
+  params: Promise<{
+    conversationId: string
+  }>
+}
+
+export default function ChatPage({ params }: ChatPageProps) {
+  const { conversationId } = use(params)
   const [isSidebarMinimized, setIsSidebarMinimized] = useState(false)
   const [isIframeActive, setIsIframeActive] = useState(false)
 
@@ -27,7 +34,10 @@ export default function ChatPage() {
         onToggleMinimized={handleToggleSidebar}
       />
       <main className="flex-1 overflow-hidden">
-        <ChatInterface onIframeStateChange={handleIframeStateChange} />
+        <ChatInterface 
+          conversationId={conversationId}
+          onIframeStateChange={handleIframeStateChange} 
+        />
       </main>
     </div>
   )

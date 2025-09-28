@@ -1,10 +1,18 @@
-import { NextResponse } from "next/server"
+import { NextResponse, NextRequest } from "next/server"
 import { buildApiUrl, makeFlaskRequest, API_CONFIG } from "@/lib/config"
 
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
   try {
     const data = await request.json()
-    const { clientId, clientSecret, redirectUri } = data
+    const { clientId, clientSecret, redirectUri, userId } = data
+
+    // Validate userId is provided
+    if (!userId) {
+      return NextResponse.json({
+        error: "User ID is required",
+        details: "User ID must be provided in the request body"
+      }, { status: 400 })
+    }
 
     if (!clientId || !clientSecret) {
       return NextResponse.json({ error: "Xero client ID and secret are required" }, { status: 400 })
@@ -19,10 +27,12 @@ export async function POST(request: Request) {
 
     // Send to Flask backend
     const flaskUrl = buildApiUrl(API_CONFIG.ENDPOINTS.CONFIG_XERO)
+    console.log(`Sending Xero config for user: ${userId}`)
+    
     const response = await makeFlaskRequest(flaskUrl, {
       method: 'POST',
       body: JSON.stringify(xeroConfig),
-    })
+    }, userId)
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({ error: 'Unknown error' }))

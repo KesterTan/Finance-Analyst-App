@@ -1,10 +1,18 @@
-import { NextResponse } from "next/server"
+import { NextResponse, NextRequest } from "next/server"
 import { buildApiUrl, makeFlaskRequest, API_CONFIG } from "@/lib/config"
 
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
   try {
     const data = await request.json()
-    const { googleCredentials } = data
+    const { googleCredentials, userId } = data
+
+    // Validate userId is provided
+    if (!userId) {
+      return NextResponse.json({
+        error: "User ID is required",
+        details: "User ID must be provided in the request body"
+      }, { status: 400 })
+    }
 
     if (!googleCredentials || typeof googleCredentials !== 'object') {
       return NextResponse.json({ error: "Google OAuth credentials are required" }, { status: 400 })
@@ -24,23 +32,18 @@ export async function POST(request: Request) {
     }
 
     // Format the Google config for the Flask backend
-    // Normalize the credentials - handle both root level and 'installed' structure
+    // Flask expects the credentials as 'credentials_json' or 'GOOGLE_OAUTH_CREDENTIALS_JSON'
     let normalizedCredentials = googleCredentials
     if (googleCredentials.installed) {
       normalizedCredentials = googleCredentials.installed
     }
 
     const googleConfig = {
-      oauth_credentials: {
-        client_id: normalizedCredentials.client_id,
-        client_secret: normalizedCredentials.client_secret,
-        auth_uri: normalizedCredentials.auth_uri,
-        token_uri: normalizedCredentials.token_uri,
-        ...normalizedCredentials // Include any other fields
-      }
+      credentials_json: normalizedCredentials,
+      GOOGLE_OAUTH_CREDENTIALS_JSON: normalizedCredentials
     }
 
-    console.log('Sending Google config to Flask:', {
+    console.log('Sending Google config to Flask for user:', userId, {
       url: buildApiUrl(API_CONFIG.ENDPOINTS.CONFIG_GOOGLE),
       payload: googleConfig
     })
@@ -50,7 +53,7 @@ export async function POST(request: Request) {
     const response = await makeFlaskRequest(flaskUrl, {
       method: 'POST',
       body: JSON.stringify(googleConfig),
-    })
+    }, userId)
 
     if (!response.ok) {
       let errorData

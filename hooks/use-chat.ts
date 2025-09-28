@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react"
 import { useToast } from "@/hooks/use-toast"
 import { useRouter } from "next/navigation"
+import { useUser } from '@auth0/nextjs-auth0'
 
 interface Message {
   role: "user" | "assistant"
@@ -49,13 +50,14 @@ export function useChat(conversationId?: string) {
   const [isPolling, setIsPolling] = useState(false)
   const { toast } = useToast()
   const router = useRouter()
+  const { user } = useUser()
 
   const fetchMessages = async () => {
-    if (!conversationId) return
+    if (!conversationId || !user?.sub) return
 
     try {
       setLoading(true)
-      const response = await fetch(`/api/conversations/${conversationId}/messages`)
+      const response = await fetch(`/api/conversations/${conversationId}/messages?userId=${user.sub}`)
 
       if (!response.ok) {
         const errorData = await response.json()
@@ -117,10 +119,10 @@ export function useChat(conversationId?: string) {
 
   // New function to check conversation status
   const checkStatus = async () => {
-    if (!conversationId) return
+    if (!conversationId || !user?.sub) return
 
     try {
-      const response = await fetch(`/api/conversations/${conversationId}/status`)
+      const response = await fetch(`/api/conversations/${conversationId}/status?userId=${user.sub}`)
       
       if (response.ok) {
         const status: ConversationStatus = await response.json()
@@ -135,7 +137,7 @@ export function useChat(conversationId?: string) {
 
   // Function to continue workflow with user input
   const continueWorkflow = async (userInput: string) => {
-    if (!conversationId) return
+    if (!conversationId || !user?.sub) return
 
     try {
       setLoading(true)
@@ -144,7 +146,10 @@ export function useChat(conversationId?: string) {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ user_input: userInput }),
+        body: JSON.stringify({ 
+          user_input: userInput,
+          userId: user.sub
+        }),
       })
 
       if (!response.ok) {
@@ -213,7 +218,10 @@ export function useChat(conversationId?: string) {
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ message: content }),
+        body: JSON.stringify({ 
+          message: content,
+          userId: user?.sub 
+        }),
       })
 
       if (!response.ok) {
@@ -262,8 +270,49 @@ export function useChat(conversationId?: string) {
 
       const data = await response.json()
 
-      // Replace loading message with actual AI response
-      if (data.response) {
+      // Handle the Flask response structure
+      if (data.status === 'waiting' && data.waiting) {
+        // Agent is waiting for user input
+        const assistantMessage: Message = {
+          id: `assistant-${Date.now()}`,
+          role: "assistant",
+          content: data.waiting.prompt || "I'm waiting for your input...",
+          agent: "finance_analyst",
+          timestamp: Date.now() / 1000,
+          workflow_step: data.waiting.waiting_for,
+          is_final: false
+        }
+        
+        // Replace loading message with waiting prompt
+        setMessages((prev) => prev.map(msg => 
+          msg.id === loadingMessageId ? assistantMessage : msg
+        ))
+
+        // Start polling since workflow is active
+        setIsPolling(true)
+      } else if (data.outputs && data.outputs.length > 0) {
+        // Handle regular response with outputs
+        const latestOutput = data.outputs[data.outputs.length - 1]
+        const assistantMessage: Message = {
+          id: `assistant-${Date.now()}`,
+          role: "assistant",
+          content: latestOutput.content || latestOutput.text || "Response received",
+          agent: latestOutput.agent || "finance_analyst",
+          timestamp: Date.now() / 1000,
+          is_final: data.status !== 'waiting'
+        }
+        
+        // Replace loading message with actual response
+        setMessages((prev) => prev.map(msg => 
+          msg.id === loadingMessageId ? assistantMessage : msg
+        ))
+
+        // Continue polling if still waiting
+        if (data.status === 'waiting') {
+          setIsPolling(true)
+        }
+      } else if (data.response) {
+        // Handle old response format for backward compatibility
         const assistantMessage: Message = {
           id: `assistant-${Date.now()}`,
           role: data.response.role || "assistant",
@@ -286,8 +335,9 @@ export function useChat(conversationId?: string) {
           setIsPolling(true)
         }
       } else {
-        // If no response, remove loading message
+        // If no recognizable response, remove loading message and show error
         setMessages((prev) => prev.filter(msg => msg.id !== loadingMessageId))
+        console.warn("Unrecognized Flask response structure:", data)
       }
 
       return data

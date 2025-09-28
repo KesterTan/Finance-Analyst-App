@@ -1,10 +1,23 @@
-import { NextResponse } from "next/server"
+import { NextResponse, NextRequest } from "next/server"
 import { buildApiUrl, makeFlaskRequest, API_CONFIG } from "@/lib/config"
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
+    // Get userId from query parameters
+    const { searchParams } = new URL(request.url)
+    const userId = searchParams.get('userId')
+    
+    if (!userId) {
+      return NextResponse.json({
+        error: "User ID is required",
+        details: "User ID must be provided as a query parameter"
+      }, { status: 400 })
+    }
+
     const url = buildApiUrl(API_CONFIG.ENDPOINTS.CONVERSATIONS)
-    const response = await makeFlaskRequest(url)
+    console.log(`Fetching conversations from: ${url} for user: ${userId}`)
+    
+    const response = await makeFlaskRequest(url, {}, userId)
     
     if (!response.ok) {
       throw new Error(`Flask API responded with status: ${response.status}`)
@@ -21,14 +34,24 @@ export async function GET() {
   }
 }
 
-export async function POST() {
+export async function POST(request: NextRequest) {
   try {
+    const requestData = await request.json()
+    const { userId } = requestData
+    
+    if (!userId) {
+      return NextResponse.json({
+        error: "User ID is required",
+        details: "User ID must be provided in the request body"
+      }, { status: 400 })
+    }
+
     const url = buildApiUrl(API_CONFIG.ENDPOINTS.CONVERSATIONS)
-    console.log("Creating new conversation via:", url)
+    console.log("Creating new conversation via:", url, "for user:", userId)
     
     const response = await makeFlaskRequest(url, {
       method: 'POST',
-    })
+    }, userId)
     
     if (!response.ok) {
       let errorDetails = `Status: ${response.status}`

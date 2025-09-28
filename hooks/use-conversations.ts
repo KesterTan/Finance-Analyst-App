@@ -3,12 +3,16 @@
 import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { useToast } from "@/hooks/use-toast"
+import { useUser } from '@auth0/nextjs-auth0'
 
 interface Conversation {
   conversation_id: string
+  id?: string // Backend sometimes uses 'id' instead of 'conversation_id'
   created_at: number
   message_count: number
   name?: string
+  title?: string // Backend sometimes uses 'title' instead of 'name'
+  status?: string
 }
 
 // Helper function to check if configuration is present locally
@@ -29,11 +33,14 @@ export function useConversations() {
   const [loading, setLoading] = useState(false)
   const router = useRouter()
   const { toast } = useToast()
+  const { user } = useUser()
 
   const fetchConversations = async () => {
+    if (!user?.sub) return
+    
     try {
       setLoading(true)
-      const response = await fetch("/api/conversations")
+      const response = await fetch(`/api/conversations?userId=${user.sub}`)
       
       if (!response.ok && response.status >= 500 && response.status < 600) {
         toast({
@@ -45,7 +52,32 @@ export function useConversations() {
       }
       
       const data = await response.json()
-      setConversations(data.conversations || [])
+      console.log("Fetched conversations:", data)
+      const fetchedConversations = (data.conversations || [])
+        .map((conv: any) => {
+          // Get name, but ignore generic titles
+          let name = conv.name
+          if (!name || name === 'New Conversation') {
+            name = conv.title && conv.title !== 'New Conversation' ? conv.title : null
+          }
+          
+          return {
+            // Normalize the conversation object - use 'id' if 'conversation_id' is not available
+            conversation_id: conv.conversation_id || conv.id,
+            created_at: conv.created_at,
+            message_count: conv.message_count || 0,
+            name: name,
+            status: conv.status
+          }
+        })
+        .filter((conv: Conversation) => {
+          const id = conv.conversation_id
+          return id && id !== 'undefined' && typeof id === 'string' && id.length > 0
+        })
+      
+      console.log("Processed conversations:", fetchedConversations)
+      setConversations(fetchedConversations)
+      return fetchedConversations
     } catch (error) {
       // Check for network connectivity errors
       if (error instanceof TypeError && error.message.includes('Failed to fetch')) {
@@ -67,14 +99,28 @@ export function useConversations() {
           variant: "destructive",
         })
       }
-    } finally {
-      setLoading(false)
-    }
+          } finally {
+        console.log("Finished fetching conversations")
+        setLoading(false)
+      }
+      
+      // Return empty array if fetch failed
+      return []
   }
 
   const createConversation = async () => {
     try {
       setLoading(true)
+      
+      // Check if user is authenticated
+      if (!user?.sub) {
+        toast({
+          title: "Authentication Required",
+          description: "Please sign in to create a conversation.",
+          variant: "destructive",
+        })
+        return null
+      }
       
       // First, check if backend is configured by checking health/capabilities
       try {
@@ -85,10 +131,10 @@ export function useConversations() {
             description: "Cannot connect to the Flask backend. Make sure it's running.",
             variant: "destructive",
           })
-          return
+          return null
         }
         
-        const capabilitiesResponse = await fetch("/api/capabilities")
+        const capabilitiesResponse = await fetch(`/api/capabilities?userId=${user?.sub}`)
         if (!capabilitiesResponse.ok) {
           if (capabilitiesResponse.status === 424) {
             const errorData = await capabilitiesResponse.json()
@@ -99,7 +145,7 @@ export function useConversations() {
                 variant: "destructive",
               })
               router.push("/settings")
-              return
+              return null
             } else {
               // Configuration exists locally but backend isn't synced
               toast({
@@ -107,7 +153,7 @@ export function useConversations() {
                 description: "Your settings may not be synced with the backend. Please check Settings page.",
                 variant: "destructive",
               })
-              return
+              return null
             }
           }
         }
@@ -117,11 +163,17 @@ export function useConversations() {
           description: "Cannot connect to the Flask backend. Make sure it's running.",
           variant: "destructive",
         })
-        return
+        return null
       }
       
       const response = await fetch("/api/conversations", {
         method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          userId: user?.sub,
+        }),
       })
       
       if (!response.ok) {
@@ -136,7 +188,7 @@ export function useConversations() {
               variant: "destructive",
             })
             router.push("/settings")
-            return
+            return null
           } else {
             // Configuration exists locally but backend isn't synced
             toast({
@@ -144,7 +196,7 @@ export function useConversations() {
               description: "Your settings may not be synced with the backend. Please check Settings page.",
               variant: "destructive",
             })
-            return
+            return null
           }
         }
         
@@ -154,14 +206,21 @@ export function useConversations() {
           description: errorData.details || "Failed to create conversation",
           variant: "destructive",
         })
-        return
+        return null
       }
       
       const data = await response.json()
+      console.log("Create conversation response:", data)
 
-      if (data.conversation_id) {
+      // Normalize conversation ID - use 'id' if 'conversation_id' is not available
+      const conversationId = data.conversation_id || data.id
+      
+      if (conversationId && conversationId !== 'undefined' && typeof conversationId === 'string') {
         await fetchConversations()
-        return data.conversation_id
+        return conversationId
+      } else {
+        console.error("Invalid conversation ID received:", { data, conversationId })
+        return null
       }
     } catch (error) {
       console.error("Create conversation error:", error)
@@ -170,6 +229,7 @@ export function useConversations() {
         description: "Cannot connect to the backend. Make sure the Flask server is running.",
         variant: "destructive",
       })
+      return null
     } finally {
       setLoading(false)
     }
@@ -178,7 +238,17 @@ export function useConversations() {
   const deleteConversation = async (conversationId: string) => {
     try {
       setLoading(true)
-      await fetch(`/api/conversations/${conversationId}`, {
+      
+      if (!user?.sub) {
+        toast({
+          title: "Authentication Required",
+          description: "Please sign in to delete a conversation.",
+          variant: "destructive",
+        })
+        return
+      }
+      
+      await fetch(`/api/conversations/${conversationId}?userId=${user.sub}`, {
         method: "DELETE",
       })
 
@@ -204,12 +274,25 @@ export function useConversations() {
   const renameConversation = async (conversationId: string, newName: string) => {
     try {
       setLoading(true)
+      
+      if (!user?.sub) {
+        toast({
+          title: "Authentication Required",
+          description: "Please sign in to rename a conversation.",
+          variant: "destructive",
+        })
+        return
+      }
+      
       const response = await fetch(`/api/conversations/${conversationId}`, {
         method: "PATCH",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ name: newName }),
+        body: JSON.stringify({ 
+          name: newName,
+          userId: user.sub
+        }),
       })
 
       if (!response.ok) {
@@ -256,6 +339,12 @@ export function useConversations() {
   // Function specifically for home page - gets existing conversation or creates one only if none exist
   const getOrCreateConversation = async () => {
     try {
+      // Check if user is authenticated
+      if (!user?.sub) {
+        console.log('User not authenticated, cannot get or create conversation')
+        return null
+      }
+      
       // Check if we're already in the process of creating a conversation
       const isCreating = localStorage.getItem('creating_conversation')
       if (isCreating === 'true') {
@@ -263,17 +352,22 @@ export function useConversations() {
         // Wait a bit and try again
         await new Promise(resolve => setTimeout(resolve, 500))
         // Fetch latest conversations to see if one was created
-        await fetchConversations()
-        if (conversations.length > 0) {
-          const mostRecentConversation = conversations.sort((a, b) => b.created_at - a.created_at)[0]
-          return mostRecentConversation.conversation_id
+        const freshConversations = await fetchConversations()
+        if (freshConversations.length > 0) {
+          const mostRecentConversation = freshConversations.sort((a: Conversation, b: Conversation) => b.created_at - a.created_at)[0]
+          if (mostRecentConversation.conversation_id && mostRecentConversation.conversation_id !== 'undefined') {
+            return mostRecentConversation.conversation_id
+          }
         }
       }
 
+      // Get fresh conversations data
+      const currentConversations = await fetchConversations()
+      
       // If conversations already exist, return the most recent one
-      if (conversations.length > 0) {
-        console.log(`Found ${conversations.length} existing conversations, returning most recent`)
-        const mostRecentConversation = conversations.sort((a, b) => b.created_at - a.created_at)[0]
+      if (currentConversations.length > 0) {
+        console.log(`Found ${currentConversations.length} existing conversations, returning most recent`)
+        const mostRecentConversation = currentConversations.sort((a: Conversation, b: Conversation) => b.created_at - a.created_at)[0]
         return mostRecentConversation.conversation_id
       }
       
@@ -288,7 +382,13 @@ export function useConversations() {
         // Clear the flag
         localStorage.removeItem('creating_conversation')
         
-        return newConversationId
+        // Check if conversation creation was successful
+        if (newConversationId) {
+          return newConversationId
+        } else {
+          // Creation failed but was handled gracefully (user was notified)
+          return null
+        }
       } catch (error) {
         // Make sure to clear the flag on error
         localStorage.removeItem('creating_conversation')

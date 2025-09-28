@@ -17,9 +17,24 @@ export function Sidebar({ isMinimized = false, onToggleMinimized }: SidebarProps
   const [editingConversation, setEditingConversation] = useState<string | null>(null)
   const [editingName, setEditingName] = useState("")
 
-  const handleEditStart = (conversation: any) => {
+  const getConversationDisplayName = (conversation: any, index: number) => {
+    // If conversation has a custom name, use it
+    if (conversation.name && conversation.name !== "New Conversation") {
+      return conversation.name
+    }
+    
+    // If conversation has messages, show message count
+    if (conversation.message_count > 0) {
+      return `Chat ${conversation.message_count}`
+    }
+    
+    // For new conversations without messages, show numbered format
+    return `Chat ${index + 1}`
+  }
+
+  const handleEditStart = (conversation: any, index: number) => {
     setEditingConversation(conversation.conversation_id)
-    setEditingName(conversation.name || `Chat ${conversation.message_count > 0 ? conversation.message_count : "New"}`)
+    setEditingName(getConversationDisplayName(conversation, index))
   }
 
   const handleEditSave = async (conversationId: string) => {
@@ -69,7 +84,9 @@ export function Sidebar({ isMinimized = false, onToggleMinimized }: SidebarProps
           </div>
 
           <div className="flex-1 overflow-auto p-2">
-            {conversations.map((conversation) => (
+            {conversations
+              .filter(conversation => conversation.conversation_id && conversation.conversation_id !== 'undefined')
+              .map((conversation, index) => (
               <div key={conversation.conversation_id} className="mb-1">
                 {editingConversation === conversation.conversation_id ? (
                   // Edit mode
@@ -114,7 +131,7 @@ export function Sidebar({ isMinimized = false, onToggleMinimized }: SidebarProps
                     <div className="flex items-center gap-2 truncate">
                       <MessageSquare size={16} />
                       <span className="truncate text-sm">
-                        {conversation.name || `Chat ${conversation.message_count > 0 ? conversation.message_count : "New"}`}
+                        {getConversationDisplayName(conversation, index)}
                       </span>
                     </div>
                     <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100">
@@ -125,7 +142,7 @@ export function Sidebar({ isMinimized = false, onToggleMinimized }: SidebarProps
                         onClick={(e) => {
                           e.preventDefault()
                           e.stopPropagation()
-                          handleEditStart(conversation)
+                          handleEditStart(conversation, index)
                         }}
                       >
                         <Edit2 size={12} />
@@ -179,11 +196,11 @@ export function Sidebar({ isMinimized = false, onToggleMinimized }: SidebarProps
           
           {/* Show recent conversations as dots or simplified icons */}
           <div className="flex flex-col gap-1 max-h-32 overflow-hidden">
-            {conversations.slice(0, 3).map((conversation) => (
+            {conversations.slice(0, 3).map((conversation, index) => (
               <Link
                 key={conversation.conversation_id}
                 href={`/chat/${conversation.conversation_id}`}
-                title={conversation.name || `Chat ${conversation.message_count > 0 ? conversation.message_count : "New"}`}
+                title={getConversationDisplayName(conversation, index)}
               >
                 <Button
                   variant="ghost"
